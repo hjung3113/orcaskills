@@ -19,6 +19,7 @@ import {
 import type { Workflow, WorkflowDocument, WorkflowFile, WorkflowNode, WorkflowNodeType } from "../shared/workflow";
 import type { CapabilityDiscovery } from "../config/discovery";
 import type { PortableConfiguration } from "../shared/config";
+import { applyPortablePreset, reviewPortableConfiguration } from "../config/staging";
 import { nodeTypes } from "../shared/workflow";
 import { serializeWorkflow } from "../shared/validation";
 import "@xyflow/react/dist/style.css";
@@ -93,6 +94,8 @@ function Studio() {
   const [outlineOpen, setOutlineOpen] = useState(true);
   const [selectedId, setSelectedId] = useState<string>();
   const [portableConfiguration, setPortableConfiguration] = useState<PortableConfiguration>({ roles: [], profiles: [], presets: [] });
+  const [savedPortableConfiguration, setSavedPortableConfiguration] = useState<PortableConfiguration>({ roles: [], profiles: [], presets: [] });
+  const [showConfigurationReview, setShowConfigurationReview] = useState(false);
   const [capabilities, setCapabilities] = useState<CapabilityDiscovery>();
   const [canvasNodes, setCanvasNodes, onNodesChange] = useNodesState<CanvasNode>([]);
   const { fitView } = useReactFlow();
@@ -117,6 +120,7 @@ function Studio() {
   const selectedRole = portableConfiguration.roles.find((role) => role.id === selectedRoleId);
   const selectedProfile = portableConfiguration.profiles.find((profile) => profile.id === selectedRole?.profileId);
   const selectedCapability = capabilities?.providers.find((provider) => provider.providerId === selectedProfile?.provider);
+  const configurationReview = reviewPortableConfiguration(savedPortableConfiguration, portableConfiguration);
 
   async function refreshCapabilities() {
     try { setCapabilities(await window.workflowStudio.discoverCapabilities()); setMessage("Local capabilities refreshed."); }
@@ -125,7 +129,7 @@ function Studio() {
 
   async function savePortableConfiguration() {
     if (!projectPath) return;
-    try { await window.workflowStudio.savePortableConfiguration(projectPath, portableConfiguration); setMessage("Configuration saved."); }
+    try { await window.workflowStudio.savePortableConfiguration(projectPath, portableConfiguration); setSavedPortableConfiguration(portableConfiguration); setShowConfigurationReview(false); setMessage("Configuration saved."); }
     catch (error) { setMessage(error instanceof Error ? error.message : "Could not save configuration."); }
   }
 
@@ -145,7 +149,9 @@ function Studio() {
       if (!selected) return;
       setProjectPath(selected);
       setWorkflows(await window.workflowStudio.listWorkflows(selected));
-      setPortableConfiguration(await window.workflowStudio.readPortableConfiguration(selected));
+      const configuration = await window.workflowStudio.readPortableConfiguration(selected);
+      setPortableConfiguration(configuration);
+      setSavedPortableConfiguration(configuration);
       setMessage(`Opened ${selected}`);
       void refreshCapabilities();
     } catch (error) { setMessage(error instanceof Error ? error.message : "Could not open project."); }
@@ -228,7 +234,7 @@ function Studio() {
         <div className="inspector-heading"><div><span className="eyebrow">SELECTED STEP</span><h2>Inspector</h2></div><span className="inspector-badge">{selectedNode ? typeLabels[selectedNode.type] : "—"}</span></div>
         {selectedNode ? <div className="inspector-form">
           <p className="node-id">{typeLabels[selectedNode.type]} · {selectedNode.id}</p>
-          {selectedNode.type === "agent" && <section className="agent-configuration"><span className="eyebrow">GUIDED CONFIGURATION</span><label>Role<select aria-label="Agent role" value={selectedRoleId} onChange={(event) => editSelected("roleId", event.target.value)}><option value="">Select a role</option>{portableConfiguration.roles.map((role) => <option key={role.id} value={role.id}>{role.id} — {role.intent}</option>)}</select></label><label>Profile<select aria-label="Agent profile" value={selectedRole?.profileId ?? ""} disabled={!selectedRole} onChange={(event) => setPortableConfiguration((current) => ({ ...current, roles: current.roles.map((role) => role.id === selectedRole?.id ? { ...role, profileId: event.target.value } : role) }))}><option value="">Select a profile</option>{portableConfiguration.profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.id} · {profile.provider} / {profile.model}</option>)}</select></label><p className="capability-status">{selectedCapability ? `${selectedCapability.displayName}: ${selectedCapability.diagnostic ?? selectedCapability.availability}` : "Select a profile to check local availability."}</p><button className="quiet-action" disabled={!projectPath} onClick={savePortableConfiguration}>Apply configuration</button></section>}
+          {selectedNode.type === "agent" && <section className="agent-configuration"><span className="eyebrow">GUIDED CONFIGURATION</span><label>Role<select aria-label="Agent role" value={selectedRoleId} onChange={(event) => editSelected("roleId", event.target.value)}><option value="">Select a role</option>{portableConfiguration.roles.map((role) => <option key={role.id} value={role.id}>{role.id} — {role.intent}</option>)}</select></label><label>Profile<select aria-label="Agent profile" value={selectedRole?.profileId ?? ""} disabled={!selectedRole} onChange={(event) => { setShowConfigurationReview(false); setPortableConfiguration((current) => ({ ...current, roles: current.roles.map((role) => role.id === selectedRole?.id ? { ...role, profileId: event.target.value } : role) })); }}><option value="">Select a profile</option>{portableConfiguration.profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.id} · {profile.provider} / {profile.model}</option>)}</select></label><label>Apply preset<select aria-label="Configuration preset" defaultValue="" onChange={(event) => { if (!event.target.value) return; const applied = applyPortablePreset(portableConfiguration, event.target.value); editSelected("roleId", applied.preset.roleId); setPortableConfiguration(applied.configuration); setShowConfigurationReview(false); }}><option value="">Choose a preset</option>{(portableConfiguration.presets ?? []).map((preset) => <option key={preset.id} value={preset.id}>{preset.id}</option>)}</select></label><p className="capability-status">{selectedCapability ? `${selectedCapability.displayName}: ${selectedCapability.diagnostic ?? selectedCapability.availability}` : "Select a profile to check local availability."}</p>{showConfigurationReview && <p className="capability-status">Review: {configurationReview.hasChanges ? `roles ${configurationReview.changedRoles.join(", ") || "—"}; profiles ${configurationReview.changedProfiles.join(", ") || "—"}; presets ${configurationReview.changedPresets.join(", ") || "—"}` : "No portable configuration changes."}</p>}<button className="quiet-action" disabled={!projectPath || !configurationReview.hasChanges} onClick={() => showConfigurationReview ? void savePortableConfiguration() : setShowConfigurationReview(true)}>{showConfigurationReview ? "Confirm save" : "Review configuration"}</button></section>}
           <label>Name<input aria-label="Node name" value={typeof selectedNode.name === "string" ? selectedNode.name : ""} onChange={(event) => editSelected("name", event.target.value)} /></label>
           <label>Prompt<textarea aria-label="Node prompt" value={typeof selectedNode.prompt === "string" ? selectedNode.prompt : ""} onChange={(event) => editSelected("prompt", event.target.value)} /></label>
           <label>Dependencies<input aria-label="Dependencies" value={toList(selectedNode.dependsOn)} onChange={(event) => editSelected("dependsOn", event.target.value, true)} /></label>

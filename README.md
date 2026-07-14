@@ -11,6 +11,8 @@ Orca Workflow Studio is an Electron desktop editor for project-local, Git-tracke
 - Supports **Start**, **Agent**, **Approval**, **Condition**, **Parallel**, and **End** nodes.
 - Validates YAML, graph structure, role/profile resolution, structured handoffs, and unsafe concurrent Worktree writes before execution.
 - Resolves a portable workflow role through an agent profile and provider/model policy, while keeping executables and credentials machine-local.
+- Discovers reviewed local CLI capabilities through bounded, non-interactive probes; discovery never logs in, uses credentials, or calls remote catalogs.
+- Guides Agent-node configuration through Role → Profile → Model policy, with explicit preset application and review-before-save.
 - Previews and runs validated workflows through an Orca adapter, preserving a local run manifest.
 - Uses Orca Decision Gates for approvals and pauses failures/escalations for explicit retry, profile replacement, or termination choices.
 
@@ -85,6 +87,14 @@ nodes:
 
 Agent nodes then add an explicit role, prompt, access mode, Worktree policy, and structured inputs/outputs. The full product contract is in [the Workflow Studio specification](.scratch/orca-workflow-studio/spec.md).
 
+### Guided configuration
+
+Open a Git project, select an **Agent** node, then use the Inspector to select its Role and Profile. The Studio refreshes only reviewed local capability adapters at project open or when you choose **Refresh capabilities**. A capability that cannot be used remains explainable; Studio never invents models or changes project configuration in the background.
+
+Profiles and presets remain portable in `.orca/workflow-config.yaml`; executable paths, credentials, and discovery data remain local. Selecting **Review configuration** lists the portable values that would change. **Confirm save** is the only action that writes the configuration. Applying a preset copies its role/profile selection into the current draft—later preset edits do not silently rewrite existing nodes.
+
+Conductor is an optional, read-only workflow advisor: it can prepare context, refine prompts, summarize handoffs, and advise escalation. It cannot edit code or manage Orca tasks, terminals, dispatches, or decision gates. See [the drill-down PRD](.scratch/workflow-studio-drilldown-configuration/prd.md) and [discovery ADR](docs/adr/0001-bounded-local-capability-discovery.md) for the full boundary.
+
 ## Running workflows from Orca
 
 The project-local [`orca-workflow`](.agents/skills/orca-workflow/SKILL.md) skill exposes the same command boundary to Codex and Claude terminals:
@@ -123,13 +133,13 @@ prototype/workflow-studio/ Throwaway UI exploration; not production code
 The test suite covers workflow parsing and round trips, configuration resolution, the runner adapter boundary, approvals/failure pauses, parallel Worktree safety, command operations, and representative mock end-to-end workflows.
 
 ```text
-30 tests passing
+37 tests passing
 TypeScript typecheck passing
 Production build passing
 Electron startup smoke passing
 ```
 
-The remaining manual visual-authoring verification is tracked in [Issue #6](https://github.com/hjung3113/orcaskills/issues/6): the local desktop accessibility provider currently denies inspection of Electron despite reporting that permission as granted. Details are recorded in [the smoke-test results](apps/workflow-studio/tests/e2e/SMOKE-RESULTS.md).
+The Electron visual-authoring smoke is recorded in [the smoke-test results](apps/workflow-studio/tests/e2e/SMOKE-RESULTS.md). The drill-down implementation adds unit coverage for safe discovery, staged review, preset copying, and node-level profile resolution.
 
 ## Roadmap
 
