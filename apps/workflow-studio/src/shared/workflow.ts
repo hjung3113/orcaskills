@@ -13,6 +13,7 @@ export interface Workflow {
   id: string;
   name?: string;
   nodes: WorkflowNode[];
+  conductor?: ConductorConfiguration;
 }
 
 export interface Diagnostic {
@@ -31,3 +32,4 @@ export interface WorkflowFile {
   id: string;
   path: string;
 }
+import type { ConductorConfiguration } from "./config";

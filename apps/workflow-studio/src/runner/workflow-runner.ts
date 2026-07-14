@@ -96,10 +96,14 @@ export class WorkflowRunner {
   constructor(private readonly adapter: OrcaCliAdapter) {}
 
   async preflight(request: WorkflowRunnerRequest): Promise<PreflightResult> {
+    const workflowConfiguration = {
+      ...request.workflowConfiguration,
+      conductor: request.workflowConfiguration.conductor ?? request.workflow.conductor,
+    };
     const diagnostics: RunnerDiagnostic[] = [];
     const parsed = parseWorkflow(serializeWorkflow(request.workflow));
     diagnostics.push(...parsed.diagnostics.map((diagnostic) => ({ code: "workflow" as const, message: diagnostic.message })));
-    diagnostics.push(...validateConfiguration(request.portableConfiguration, request.workflowConfiguration, request.localConfiguration)
+    diagnostics.push(...validateConfiguration(request.portableConfiguration, workflowConfiguration, request.localConfiguration)
       .map((diagnostic) => ({ code: "configuration" as const, message: diagnostic.message })));
     diagnostics.push(...validateParallelWorkflow(request.workflow));
     if (!(await this.adapter.checkCli())) diagnostics.push({ code: "orca-cli", message: "Orca CLI is unavailable." });
@@ -115,8 +119,8 @@ export class WorkflowRunner {
       try { resolvedProfileIds[node.id] = resolveNodeAgentProfile(node.id, roleId, request.portableConfiguration, request.workflowConfiguration, request.localConfiguration).profile.id; }
       catch (error) { diagnostics.push({ code: "configuration", nodeId: node.id, message: error instanceof Error ? error.message : "Agent profile resolution failed." }); }
     }
-    if (request.workflowConfiguration.conductor?.enabled) {
-      try { createReadOnlyConductor(request.workflowConfiguration.conductor); }
+    if (workflowConfiguration.conductor?.enabled) {
+      try { createReadOnlyConductor(workflowConfiguration.conductor); }
       catch (error) { diagnostics.push({ code: "configuration", message: error instanceof Error ? error.message : "Conductor configuration is invalid." }); }
     }
     return { diagnostics, resolvedProfileIds, valid: diagnostics.length === 0 };
