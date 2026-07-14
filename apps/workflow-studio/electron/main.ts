@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { isGitProject, listWorkflowFiles, readWorkflowFile, saveWorkflowFile } from "../src/shared/project";
 import { parseWorkflow } from "../src/shared/validation";
 import { CommandOrcaCliAdapter, WorkflowRunner, type WorkflowRunnerRequest } from "../src/runner";
+import { defaultCapabilityAdapterRegistry, NodeCapabilityProbeRunner } from "../src/config/discovery";
 
 function createWindow(): void {
   const window = new BrowserWindow({
@@ -35,6 +36,8 @@ app.whenReady().then(() => {
     new WorkflowRunner(new CommandOrcaCliAdapter()).preview(request));
   ipcMain.handle("workflow:run", (_event, request: WorkflowRunnerRequest) =>
     new WorkflowRunner(new CommandOrcaCliAdapter()).run(request));
+  ipcMain.handle("capabilities:discover", () =>
+    defaultCapabilityAdapterRegistry.discover(new NodeCapabilityProbeRunner()));
   createWindow();
   app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });

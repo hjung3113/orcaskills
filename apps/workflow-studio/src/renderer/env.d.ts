@@ -2,6 +2,7 @@
 
 import type { WorkflowDocument, WorkflowFile } from "../shared/workflow";
 import type { RunManifest, WorkflowPreview, WorkflowRunnerRequest } from "../runner";
+import type { CapabilityDiscovery } from "../config/discovery";
 
 declare global {
   interface Window {
@@ -13,6 +14,7 @@ declare global {
       save(projectPath: string, source: string): Promise<string>;
       preview(request: WorkflowRunnerRequest): Promise<WorkflowPreview>;
       run(request: WorkflowRunnerRequest): Promise<{ manifest: RunManifest; manifestPath: string }>;
+      discoverCapabilities(): Promise<CapabilityDiscovery>;
     };
   }
 }

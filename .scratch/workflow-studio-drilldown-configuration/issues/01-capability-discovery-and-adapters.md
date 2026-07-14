@@ -1,6 +1,6 @@
 # Capability discovery and adapters
 
-Status: Planned
+Status: In progress
 
 Create the typed local capability discovery result model and reviewed adapter registry. Implement bounded read-only probes, startup/manual refresh orchestration, deterministic availability states, short timeouts, and diagnostics that never expose credentials or local secrets.
 
