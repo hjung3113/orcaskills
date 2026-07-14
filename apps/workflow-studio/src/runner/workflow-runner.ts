@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { createReadOnlyConductor } from "../config/conductor";
-import { resolveAgentProfile, validateConfiguration } from "../config/resolution";
+import { resolveNodeAgentProfile, validateConfiguration } from "../config/resolution";
 import { parseWorkflow, serializeWorkflow } from "../shared/validation";
 import type { WorkflowNode } from "../shared/workflow";
 import { writeRunManifest } from "./manifest";
@@ -112,7 +112,7 @@ export class WorkflowRunner {
         diagnostics.push({ code: "agent-node", nodeId: node.id, message: `Agent node \"${node.id}\" needs a roleId.` });
         continue;
       }
-      try { resolvedProfileIds[node.id] = resolveAgentProfile(roleId, request.portableConfiguration, request.workflowConfiguration, request.localConfiguration).profile.id; }
+      try { resolvedProfileIds[node.id] = resolveNodeAgentProfile(node.id, roleId, request.portableConfiguration, request.workflowConfiguration, request.localConfiguration).profile.id; }
       catch (error) { diagnostics.push({ code: "configuration", nodeId: node.id, message: error instanceof Error ? error.message : "Agent profile resolution failed." }); }
     }
     if (request.workflowConfiguration.conductor?.enabled) {
@@ -186,7 +186,7 @@ export class WorkflowRunner {
         const configuration = replacementProfileId
           ? { ...request.workflowConfiguration, profileOverrides: { ...request.workflowConfiguration.profileOverrides, [nodeRoleId(node)!]: replacementProfileId } }
           : request.workflowConfiguration;
-        const role = resolveAgentProfile(nodeRoleId(node)!, request.portableConfiguration, configuration, request.localConfiguration);
+        const role = resolveNodeAgentProfile(node.id, nodeRoleId(node)!, request.portableConfiguration, configuration, request.localConfiguration);
         const prompt = promptFor(node, role.role.intent);
         const command = commandFor(node, role.localProfile?.executablePath ?? role.localProvider.executablePath);
         const worktreeId = worktreeMode(node) === "isolated"

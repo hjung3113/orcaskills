@@ -6,7 +6,9 @@ import {
   ConfigurationResolutionError,
   createReadOnlyConductor,
   localConfigurationPath,
+  modelPolicyFor,
   resolveAgentProfile,
+  resolveNodeAgentProfile,
   saveLocalConfiguration,
   savePortableConfiguration,
   validateConductorConfiguration,
@@ -38,6 +40,30 @@ describe("role and local profile configuration", () => {
   it("lets a workflow override the role profile", () => {
     const workflow: WorkflowConfiguration = { profileOverrides: { implementer: "planner" } };
     expect(resolveAgentProfile("implementer", portable, workflow, local)).toMatchObject({ selectedBy: "workflow-override", profile: { id: "planner" } });
+  });
+
+  it("gives an explicit node override precedence and exposes its model policy", () => {
+    const workflow: WorkflowConfiguration = {
+      profileOverrides: { implementer: "planner" },
+      nodeProfileOverrides: { build: { profileId: "balanced", modelPolicy: { kind: "provider-default" } } },
+    };
+
+    expect(resolveNodeAgentProfile("build", "implementer", portable, workflow, local)).toMatchObject({
+      selectedBy: "node-override",
+      profile: { id: "balanced" },
+      modelPolicy: { kind: "provider-default" },
+    });
+  });
+
+  it("validates portable preset references and preserves legacy exact model identifiers", () => {
+    const invalid: PortableConfiguration = {
+      ...portable,
+      presets: [{ id: "broken", roleId: "missing-role", profileId: "missing-profile" }],
+    };
+    expect(validateConfiguration(invalid, {}, local).map(({ code }) => code)).toEqual(
+      expect.arrayContaining(["missing-preset-role", "missing-preset-profile"]),
+    );
+    expect(modelPolicyFor(portable.profiles[0]!)).toEqual({ kind: "exact", modelId: "gpt-5" });
   });
 
   it("reports unavailable local providers and disabled local profiles", () => {
