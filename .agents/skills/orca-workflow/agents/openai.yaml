@@ -1,0 +1,3 @@
+interface:
+  display_name: Orca Workflow
+  short_description: Run project-local workflows through Orca

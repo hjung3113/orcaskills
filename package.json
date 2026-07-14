@@ -1,0 +1,14 @@
+{
+  "name": "orcaskills",
+  "private": true,
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "prototype": "npm --prefix prototype/workflow-studio run dev",
+    "dev": "npm --workspace @orca/workflow-studio run dev",
+    "build": "npm --workspace @orca/workflow-studio run build",
+    "test": "npm --workspace @orca/workflow-studio run test",
+    "typecheck": "npm --workspace @orca/workflow-studio run typecheck"
+  }
+}
