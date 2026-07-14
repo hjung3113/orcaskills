@@ -1,6 +1,6 @@
 # Electron smoke test results
 
-Status: application-start smoke passed; visual authoring verification blocked
+Status: passed
 
 Date: 2026-07-15
 
@@ -20,6 +20,12 @@ npm start
 # electron .
 ```
 
-Electron is therefore launchable. Visual authoring interaction is still unverified because the local Computer Use provider rejects every Electron accessibility-tree request with `permission_denied`, even though its permissions endpoint reports Accessibility and Screenshots as granted. The in-app browser is unavailable in this session, so no alternative browser surface can be used for the renderer interaction pass.
+Electron is launchable. During visual verification, the renderer initially displayed a blank page because the production Vite build emitted absolute `/assets/...` URLs while Electron opened the renderer with `file://`. Setting Vite `base` to `"./"` fixed that production-only load failure.
 
-Repeatable mocked end-to-end coverage completed successfully with `npm test -- --run tests/e2e/representative-workflows.test.ts`: 2 tests passed. A functioning desktop accessibility provider is required to complete the remaining visual authoring steps in `MANUAL-SMOKE.md`.
+Visual authoring verification passed through the local Computer Use provider:
+
+- Canvas, outline, Inspector, and the `Workflow is valid and ready to save` diagnostic were visible.
+- `+ Agent` added an agent node. Selecting it and editing the Inspector changed the name to `Visual smoke agent` and the prompt to `Verify the visual authoring flow.`; the outline and canvas reflected the changes.
+- The Studio opened `/Users/hyojung/orca/projects/orcaskills` as a Git project, saved `.orca/workflows/new-workflow.yaml`, exposed `new-workflow` in the Workflows list, and reloaded it. The temporary saved workflow was removed after verification.
+
+Repeatable mocked end-to-end coverage completed successfully with `npm test -- --run tests/e2e/representative-workflows.test.ts`: 2 tests passed. `npm run typecheck` also passed after the visual verification.

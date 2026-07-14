@@ -184,25 +184,27 @@ function Studio() {
     commit({ ...workflow, nodes: workflow.nodes.map((node) => node.id === selectedNode.id ? { ...node, [field]: nextValue } : node) });
   }
 
-  return <main>
-    <header><div><strong>Orca Workflow Studio</strong><span>{message}</span></div><div className="header-actions"><button onClick={openProject}>Open Git project</button><button disabled={!projectPath || document.diagnostics.length > 0} onClick={saveWorkflow}>Save workflow</button></div></header>
+  return <main className="studio-shell">
+    <header className="studio-header"><div className="header-title"><span className="eyebrow">WORKFLOW /</span><strong>{document.workflow?.name ?? "New workflow"}</strong><small>{message}</small></div><div className="header-actions"><span className={document.diagnostics.length ? "status invalid" : "status"}>{document.diagnostics.length ? "Needs attention" : "Valid"}</span><button className="quiet-action" onClick={openProject}>Open project</button><button className="save-action" disabled={!projectPath || document.diagnostics.length > 0} onClick={saveWorkflow}>Save workflow</button></div></header>
     <section className={`studio-layout ${outlineOpen ? "outline-open" : "outline-collapsed"}`}>
       <aside className="outline" aria-label="Workflow navigation">
+        <div className="studio-brand"><span>✦</span><strong>Workflow Studio</strong></div>
+        <button className="project-switch" onClick={openProject}><i />{projectPath ? projectPath.split("/").pop() : "Select Git project"}<b>›</b></button>
         <div className="panel-heading"><h2>Workflows</h2><button aria-label="Collapse steps outline" className="icon-button" onClick={() => setOutlineOpen(false)}>‹</button></div>
-        <button onClick={() => { setSource(starterWorkflow); setMessage("New workflow"); }}>New workflow</button>
+        <button className="new-workflow" onClick={() => { setSource(starterWorkflow); setMessage("New workflow"); }}>+ New workflow</button>
         {workflows.map((workflow) => <button className="workflow" key={workflow.path} onClick={() => loadWorkflow(workflow)}>{workflow.id}</button>)}
-        <div className="steps-heading"><h2>Steps</h2></div>
+        <div className="steps-heading"><h2>Steps</h2><span>{document.workflow?.nodes.length ?? 0}</span></div>
         <nav>{document.workflow?.nodes.map((node) => <button className={`outline-step ${node.id === selectedId ? "active" : ""}`} key={node.id} onClick={() => selectNode(node.id)}><span>{typeLabels[node.type]}</span>{displayName(node)}</button>)}</nav>
       </aside>
       {!outlineOpen && <button className="outline-reopen" aria-label="Expand steps outline" onClick={() => setOutlineOpen(true)}>›</button>}
       <section className="canvas-panel" aria-label="Workflow canvas">
-        <div className="canvas-toolbar" role="toolbar" aria-label="Add workflow node">{nodeTypes.map((type) => <button key={type} onClick={() => addNode(type)}>+ {typeLabels[type]}</button>)}<button disabled={!selectedId} className="danger" onClick={removeSelected}>Remove selected</button></div>
+        <div className="canvas-toolbar" role="toolbar" aria-label="Add workflow node"><span>Add step</span>{nodeTypes.map((type) => <button key={type} onClick={() => addNode(type)}>+ {typeLabels[type]}</button>)}<button disabled={!selectedId} className="danger" onClick={removeSelected}>Remove</button></div>
         <ReactFlow nodes={canvasNodes.map((node) => ({ ...node, selected: node.id === selectedId }))} edges={edges} nodeTypes={canvasNodeTypes} onNodesChange={onNodesChange} onNodeClick={(_event, node) => selectNode(node.id)} onConnect={connect} onEdgeClick={(_event, edge) => removeEdge(edge)} fitView deleteKeyCode={null}>
           <Background gap={18} size={1} /><Controls /><MiniMap pannable zoomable />
         </ReactFlow>
       </section>
       <aside className="inspector" aria-label="Node inspector">
-        <h2>Inspector</h2>
+        <div className="inspector-heading"><div><span className="eyebrow">SELECTED STEP</span><h2>Inspector</h2></div><span className="inspector-badge">{selectedNode ? typeLabels[selectedNode.type] : "—"}</span></div>
         {selectedNode ? <div className="inspector-form">
           <p className="node-id">{typeLabels[selectedNode.type]} · {selectedNode.id}</p>
           <label>Name<input aria-label="Node name" value={typeof selectedNode.name === "string" ? selectedNode.name : ""} onChange={(event) => editSelected("name", event.target.value)} /></label>
