@@ -84,4 +84,14 @@ describe("WorkflowRunner", () => {
     await expect(runner.run(invalid)).rejects.toBeInstanceOf(WorkflowPreflightError);
     expect(adapter.operations).toEqual([]);
   });
+
+  it("reads an enabled Conductor from workflow YAML when no separate workflow configuration is supplied", async () => {
+    const runner = new WorkflowRunner(new RecordingOrcaCliAdapter());
+    const preflight = await runner.preflight({
+      ...request,
+      workflow: { ...request.workflow, conductor: { enabled: true, profileId: "missing" } },
+      workflowConfiguration: {},
+    });
+    expect(preflight.diagnostics.map((diagnostic) => diagnostic.message)).toEqual(expect.arrayContaining([expect.stringContaining("Conductor references missing profile")]))
+  });
 });

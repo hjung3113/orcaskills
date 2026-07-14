@@ -1,6 +1,6 @@
 # Portable configuration and validation
 
-Status: In progress
+Status: Complete
 
 Model portable presets, explicit model policies, staged changes, and unavailable configuration diagnostics. Preserve the separation between project configuration and machine-only discovery/provider state.
 

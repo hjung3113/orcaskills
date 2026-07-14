@@ -1,6 +1,6 @@
 # Guided configuration UI
 
-Status: Planned
+Status: Complete
 
 Replace raw technical configuration entry with Role -> Profile -> Model policy selection, explicit node overrides, capability refresh and availability presentation, preset registration/application, change review, and Conductor guidance.
 
