@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from "electron";
 import type { WorkflowDocument, WorkflowFile } from "../src/shared/workflow";
 import type { WorkflowPreview, WorkflowRunnerRequest } from "../src/runner";
 import type { CapabilityDiscovery } from "../src/config/discovery";
+import type { PortableConfiguration } from "../src/shared/config";
 
 contextBridge.exposeInMainWorld("workflowStudio", {
   selectProject: (): Promise<string | undefined> => ipcRenderer.invoke("project:select"),
@@ -12,4 +13,6 @@ contextBridge.exposeInMainWorld("workflowStudio", {
   preview: (request: WorkflowRunnerRequest): Promise<WorkflowPreview> => ipcRenderer.invoke("workflow:preview", request),
   run: (request: WorkflowRunnerRequest) => ipcRenderer.invoke("workflow:run", request),
   discoverCapabilities: (): Promise<CapabilityDiscovery> => ipcRenderer.invoke("capabilities:discover"),
+  readPortableConfiguration: (projectPath: string): Promise<PortableConfiguration> => ipcRenderer.invoke("configuration:read-portable", projectPath),
+  savePortableConfiguration: (projectPath: string, configuration: PortableConfiguration): Promise<string> => ipcRenderer.invoke("configuration:save-portable", projectPath, configuration),
 });

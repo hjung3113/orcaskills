@@ -17,6 +17,8 @@ import {
   type NodeProps,
 } from "@xyflow/react";
 import type { Workflow, WorkflowDocument, WorkflowFile, WorkflowNode, WorkflowNodeType } from "../shared/workflow";
+import type { CapabilityDiscovery } from "../config/discovery";
+import type { PortableConfiguration } from "../shared/config";
 import { nodeTypes } from "../shared/workflow";
 import { serializeWorkflow } from "../shared/validation";
 import "@xyflow/react/dist/style.css";
@@ -90,6 +92,8 @@ function Studio() {
   const [message, setMessage] = useState("Open a Git project to begin.");
   const [outlineOpen, setOutlineOpen] = useState(true);
   const [selectedId, setSelectedId] = useState<string>();
+  const [portableConfiguration, setPortableConfiguration] = useState<PortableConfiguration>({ roles: [], profiles: [], presets: [] });
+  const [capabilities, setCapabilities] = useState<CapabilityDiscovery>();
   const [canvasNodes, setCanvasNodes, onNodesChange] = useNodesState<CanvasNode>([]);
   const { fitView } = useReactFlow();
 
@@ -109,6 +113,21 @@ function Studio() {
     [document.workflow, selectedId],
   );
   const edges = useMemo(() => toEdges(document.workflow), [document.workflow]);
+  const selectedRoleId = typeof selectedNode?.roleId === "string" ? selectedNode.roleId : "";
+  const selectedRole = portableConfiguration.roles.find((role) => role.id === selectedRoleId);
+  const selectedProfile = portableConfiguration.profiles.find((profile) => profile.id === selectedRole?.profileId);
+  const selectedCapability = capabilities?.providers.find((provider) => provider.providerId === selectedProfile?.provider);
+
+  async function refreshCapabilities() {
+    try { setCapabilities(await window.workflowStudio.discoverCapabilities()); setMessage("Local capabilities refreshed."); }
+    catch { setMessage("Could not refresh local capabilities."); }
+  }
+
+  async function savePortableConfiguration() {
+    if (!projectPath) return;
+    try { await window.workflowStudio.savePortableConfiguration(projectPath, portableConfiguration); setMessage("Configuration saved."); }
+    catch (error) { setMessage(error instanceof Error ? error.message : "Could not save configuration."); }
+  }
 
   function commit(workflow: Workflow) {
     setSource(serializeWorkflow(workflow));
@@ -126,7 +145,9 @@ function Studio() {
       if (!selected) return;
       setProjectPath(selected);
       setWorkflows(await window.workflowStudio.listWorkflows(selected));
+      setPortableConfiguration(await window.workflowStudio.readPortableConfiguration(selected));
       setMessage(`Opened ${selected}`);
+      void refreshCapabilities();
     } catch (error) { setMessage(error instanceof Error ? error.message : "Could not open project."); }
   }
 
@@ -185,7 +206,7 @@ function Studio() {
   }
 
   return <main className="studio-shell">
-    <header className="studio-header"><div className="header-title"><span className="eyebrow">WORKFLOW /</span><strong>{document.workflow?.name ?? "New workflow"}</strong><small>{message}</small></div><div className="header-actions"><span className={document.diagnostics.length ? "status invalid" : "status"}>{document.diagnostics.length ? "Needs attention" : "Valid"}</span><button className="quiet-action" onClick={openProject}>Open project</button><button className="save-action" disabled={!projectPath || document.diagnostics.length > 0} onClick={saveWorkflow}>Save workflow</button></div></header>
+    <header className="studio-header"><div className="header-title"><span className="eyebrow">WORKFLOW /</span><strong>{document.workflow?.name ?? "New workflow"}</strong><small>{message}</small></div><div className="header-actions"><span className={document.diagnostics.length ? "status invalid" : "status"}>{document.diagnostics.length ? "Needs attention" : "Valid"}</span><button className="quiet-action" onClick={refreshCapabilities}>Refresh capabilities</button><button className="quiet-action" onClick={openProject}>Open project</button><button className="save-action" disabled={!projectPath || document.diagnostics.length > 0} onClick={saveWorkflow}>Save workflow</button></div></header>
     <section className={`studio-layout ${outlineOpen ? "outline-open" : "outline-collapsed"}`}>
       <aside className="outline" aria-label="Workflow navigation">
         <div className="studio-brand"><span>✦</span><strong>Workflow Studio</strong></div>
@@ -207,6 +228,7 @@ function Studio() {
         <div className="inspector-heading"><div><span className="eyebrow">SELECTED STEP</span><h2>Inspector</h2></div><span className="inspector-badge">{selectedNode ? typeLabels[selectedNode.type] : "—"}</span></div>
         {selectedNode ? <div className="inspector-form">
           <p className="node-id">{typeLabels[selectedNode.type]} · {selectedNode.id}</p>
+          {selectedNode.type === "agent" && <section className="agent-configuration"><span className="eyebrow">GUIDED CONFIGURATION</span><label>Role<select aria-label="Agent role" value={selectedRoleId} onChange={(event) => editSelected("roleId", event.target.value)}><option value="">Select a role</option>{portableConfiguration.roles.map((role) => <option key={role.id} value={role.id}>{role.id} — {role.intent}</option>)}</select></label><label>Profile<select aria-label="Agent profile" value={selectedRole?.profileId ?? ""} disabled={!selectedRole} onChange={(event) => setPortableConfiguration((current) => ({ ...current, roles: current.roles.map((role) => role.id === selectedRole?.id ? { ...role, profileId: event.target.value } : role) }))}><option value="">Select a profile</option>{portableConfiguration.profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.id} · {profile.provider} / {profile.model}</option>)}</select></label><p className="capability-status">{selectedCapability ? `${selectedCapability.displayName}: ${selectedCapability.diagnostic ?? selectedCapability.availability}` : "Select a profile to check local availability."}</p><button className="quiet-action" disabled={!projectPath} onClick={savePortableConfiguration}>Apply configuration</button></section>}
           <label>Name<input aria-label="Node name" value={typeof selectedNode.name === "string" ? selectedNode.name : ""} onChange={(event) => editSelected("name", event.target.value)} /></label>
           <label>Prompt<textarea aria-label="Node prompt" value={typeof selectedNode.prompt === "string" ? selectedNode.prompt : ""} onChange={(event) => editSelected("prompt", event.target.value)} /></label>
           <label>Dependencies<input aria-label="Dependencies" value={toList(selectedNode.dependsOn)} onChange={(event) => editSelected("dependsOn", event.target.value, true)} /></label>

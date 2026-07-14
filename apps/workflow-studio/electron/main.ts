@@ -4,6 +4,8 @@ import { isGitProject, listWorkflowFiles, readWorkflowFile, saveWorkflowFile } f
 import { parseWorkflow } from "../src/shared/validation";
 import { CommandOrcaCliAdapter, WorkflowRunner, type WorkflowRunnerRequest } from "../src/runner";
 import { defaultCapabilityAdapterRegistry, NodeCapabilityProbeRunner } from "../src/config/discovery";
+import { readPortableConfiguration, savePortableConfiguration } from "../src/config/storage";
+import type { PortableConfiguration } from "../src/shared/config";
 
 function createWindow(): void {
   const window = new BrowserWindow({
@@ -38,6 +40,15 @@ app.whenReady().then(() => {
     new WorkflowRunner(new CommandOrcaCliAdapter()).run(request));
   ipcMain.handle("capabilities:discover", () =>
     defaultCapabilityAdapterRegistry.discover(new NodeCapabilityProbeRunner()));
+  ipcMain.handle("configuration:read-portable", async (_event, projectPath: string): Promise<PortableConfiguration> => {
+    try { return await readPortableConfiguration(projectPath); }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return { roles: [], profiles: [], presets: [] };
+      throw error;
+    }
+  });
+  ipcMain.handle("configuration:save-portable", (_event, projectPath: string, configuration: PortableConfiguration) =>
+    savePortableConfiguration(projectPath, configuration));
   createWindow();
   app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });
