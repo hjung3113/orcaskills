@@ -72,8 +72,11 @@ describe("Agent Workflow evidence contract", () => {
     });
     expect(result.manifest.status).toBe("terminated");
     expect(result.manifest.agentWorkflow?.evidence).toMatchObject({ valid: false, reason: expect.stringContaining("stale") });
+    expect(result.manifest.agentWorkflow?.cleanup).toMatchObject({ releasedResources: true, evidenceArchived: true });
     const releaseGates = adapter.operations.filter((operation) => operation.kind === "create-gate" && operation.input.nodeId === "release");
     expect(releaseGates).toHaveLength(1);
     expect(releaseGates[0]).toMatchObject({ input: { options: ["retry", "replace-profile", "terminate"] } });
+    expect(adapter.operations.filter((operation) => operation.kind === "close-terminal")).toHaveLength(4);
+    expect(adapter.operations.filter((operation) => operation.kind === "remove-worktree")).toHaveLength(1);
   });
 });
