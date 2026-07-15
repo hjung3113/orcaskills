@@ -118,7 +118,7 @@ The template is portable; the toolkit root stays in the machine-local configurat
 
 ### Run Readiness and execution preview
 
-Choose **Check readiness** before a run to evaluate the exact draft against its workflow diagnostics, role/profile and Conductor configuration, required local toolkit, Orca CLI, and Orca runtime. The Inspector reports **Not checked**, **Blocked**, or **Ready to preview**. Every blocker names its scope, reason, and next action; changing the draft, project, or saved portable configuration invalidates an earlier result.
+Choose **Check readiness** before a run to evaluate the exact draft against its workflow diagnostics, role/profile and Conductor configuration, required local toolkit, Orca CLI, and Orca runtime. The Inspector reports **Not checked**, **Blocked**, or **Ready to preview**. Every blocker names its scope, reason, and next action. A node-specific blocker includes **Go to _node-id_**, which focuses that node and its Inspector; affected canvas nodes also carry a text-backed **Blocked** badge. Changing the draft, project, or saved portable configuration invalidates an earlier result and clears the badges.
 
 Only a Ready result enables **Preview execution**. Preview lists the planned Orca operations but creates no task, terminal, worktree, manifest, or Decision Gate. The renderer never receives machine-local paths or credentials; Electron or the loopback local API builds the runner request from server-owned configuration. See [Run Readiness](docs/run-readiness.md) for the complete behavior and boundary.
 
@@ -161,7 +161,7 @@ examples/agent-workflow/   Portable Agent Workflow example
 The test suite covers workflow parsing and round trips, configuration resolution, the runner adapter boundary, approvals/failure pauses, parallel Worktree safety, command operations, and representative mock end-to-end workflows.
 
 ```text
-53 tests passing
+58 tests passing
 TypeScript typecheck passing
 Production build passing
 Electron startup uses the production CommonJS Electron entrypoint

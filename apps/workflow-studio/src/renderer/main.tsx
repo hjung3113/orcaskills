@@ -24,7 +24,7 @@ import { nodeTypes } from "../shared/workflow";
 import { serializeWorkflow } from "../shared/validation";
 import { createAgentWorkflow } from "../shared/agent-workflow";
 import { workflowStudioClient } from "../client";
-import { currentPreview, previewReadiness, staticReadiness, type CheckedPreview } from "./readiness";
+import { blockerDestination, currentPreview, nodeReadiness, previewReadiness, staticReadiness, type CheckedPreview } from "./readiness";
 import "@xyflow/react/dist/style.css";
 import "./styles.css";
 
@@ -38,7 +38,7 @@ nodes:
     dependsOn: [start]
 `;
 
-type CanvasNode = Node<{ label: string; type: WorkflowNodeType }>;
+type CanvasNode = Node<{ label: string; type: WorkflowNodeType; readiness?: "blocked" | "ready" }>;
 
 const typeLabels: Record<WorkflowNodeType, string> = {
   start: "Start",
@@ -54,6 +54,7 @@ function WorkflowCanvasNode({ data, selected }: NodeProps<CanvasNode>) {
     <Handle type="target" position={Position.Left} aria-label={`Connect to ${data.label}`} />
     <span className="node-kind">{typeLabels[data.type]}</span>
     <strong>{data.label}</strong>
+    {data.readiness && <span className={`node-readiness ${data.readiness}`} aria-label={`${data.label} readiness: ${data.readiness}`}>{data.readiness === "blocked" ? "Blocked" : "Ready"}</span>}
     <Handle type="source" position={Position.Right} aria-label={`Connect from ${data.label}`} />
   </div>;
 }
@@ -104,6 +105,7 @@ function Studio() {
   const [checkedPreview, setCheckedPreview] = useState<CheckedPreview>();
   const [checkingReadiness, setCheckingReadiness] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
+  const [configurationRevision, setConfigurationRevision] = useState(0);
   const [canvasNodes, setCanvasNodes, onNodesChange] = useNodesState<CanvasNode>([]);
   const { fitView } = useReactFlow();
 
@@ -130,10 +132,10 @@ function Studio() {
   const selectedProfile = portableConfiguration.profiles.find((profile) => profile.id === selectedProfileId);
   const selectedCapability = capabilities?.providers.find((provider) => provider.providerId === selectedProfile?.provider);
   const configurationReview = reviewPortableConfiguration(savedPortableConfiguration, portableConfiguration);
-  const preview = currentPreview(checkedPreview, projectPath, source);
+  const preview = currentPreview(checkedPreview, projectPath, source, configurationRevision);
   const readiness = !projectPath
     ? { state: "unknown" as const, blockers: [] }
-    : staticReadiness(document.diagnostics) ?? previewReadiness(preview);
+    : staticReadiness(document.diagnostics) ?? previewReadiness(preview, document.workflow?.nodes.map((node) => node.id));
 
   async function refreshCapabilities() {
     try { setCapabilities(await workflowStudioClient.discoverCapabilities()); setMessage("Local capabilities refreshed."); }
@@ -142,7 +144,7 @@ function Studio() {
 
   async function savePortableConfiguration() {
     if (!projectPath) return;
-    try { await workflowStudioClient.savePortableConfiguration(projectPath, portableConfiguration); setSavedPortableConfiguration(portableConfiguration); setCheckedPreview(undefined); setShowConfigurationReview(false); setMessage("Configuration saved. Check readiness again."); }
+    try { await workflowStudioClient.savePortableConfiguration(projectPath, portableConfiguration); setSavedPortableConfiguration(portableConfiguration); setConfigurationRevision((revision) => revision + 1); setCheckedPreview(undefined); setShowConfigurationReview(false); setMessage("Configuration saved. Check readiness again."); }
     catch (error) { setMessage(error instanceof Error ? error.message : "Could not save configuration."); }
   }
 
@@ -194,7 +196,7 @@ function Studio() {
     setShowPreview(false);
     try {
       const next = await workflowStudioClient.preview(projectPath, source);
-      setCheckedPreview({ projectPath, source, preview: next });
+      setCheckedPreview({ projectPath, source, configurationRevision, preview: next });
       setMessage(next.preflight.valid ? "Run readiness passed. Preview execution is available." : "Run readiness is blocked. Review the blockers.");
     } catch (error) { setCheckedPreview(undefined); setMessage(error instanceof Error ? error.message : "Could not check run readiness."); }
     finally { setCheckingReadiness(false); }
@@ -274,13 +276,13 @@ function Studio() {
       {!outlineOpen && <button className="outline-reopen" aria-label="Expand steps outline" onClick={() => setOutlineOpen(true)}>›</button>}
       <section className="canvas-panel" aria-label="Workflow canvas">
         <div className="canvas-toolbar" role="toolbar" aria-label="Add workflow node"><span>Add step</span>{nodeTypes.map((type) => <button key={type} onClick={() => addNode(type)}>+ {typeLabels[type]}</button>)}<button disabled={!selectedId} className="danger" onClick={removeSelected}>Remove</button></div>
-        <ReactFlow nodes={canvasNodes.map((node) => ({ ...node, selected: node.id === selectedId }))} edges={edges} nodeTypes={canvasNodeTypes} onNodesChange={onNodesChange} onNodeClick={(_event, node) => selectNode(node.id)} onConnect={connect} onEdgeClick={(_event, edge) => removeEdge(edge)} fitView deleteKeyCode={null}>
+        <ReactFlow nodes={canvasNodes.map((node) => ({ ...node, selected: node.id === selectedId, data: { ...node.data, ...(nodeReadiness(node.id, node.data.type, readiness) ? { readiness: nodeReadiness(node.id, node.data.type, readiness) } : {}) } }))} edges={edges} nodeTypes={canvasNodeTypes} onNodesChange={onNodesChange} onNodeClick={(_event, node) => selectNode(node.id)} onConnect={connect} onEdgeClick={(_event, edge) => removeEdge(edge)} fitView deleteKeyCode={null}>
           <Background gap={18} size={1} /><Controls /><MiniMap pannable zoomable />
         </ReactFlow>
       </section>
       <aside className="inspector" aria-label="Node inspector">
         <div className="inspector-heading"><div><span className="eyebrow">SELECTED STEP</span><h2>Inspector</h2></div><span className="inspector-badge">{selectedNode ? typeLabels[selectedNode.type] : "—"}</span></div>
-        <section className={`run-readiness ${readiness.state}`} aria-live="polite"><div className="readiness-heading"><div><span className="eyebrow">RUN READINESS</span><strong>{readiness.state === "ready" ? "Ready to preview" : readiness.state === "blocked" ? "Blocked" : "Not checked"}</strong></div><span>{readiness.state}</span></div>{readiness.state === "unknown" && <p>Check this exact draft against its local profiles, toolkit, and Orca availability.</p>}{readiness.blockers.map((blocker, index) => <div className="readiness-blocker" key={`${blocker.message}-${index}`}><strong>{blocker.scope}</strong><p>{blocker.message}</p><small>{blocker.nextAction}</small></div>)}<div className="readiness-actions"><button className="quiet-action" disabled={!projectPath || checkingReadiness} onClick={() => void checkReadiness()}>{checkingReadiness ? "Checking…" : "Check readiness"}</button><button className="preview-action" disabled={readiness.state !== "ready"} onClick={() => setShowPreview((open) => !open)}>{showPreview ? "Hide preview" : "Preview execution"}</button></div>{showPreview && preview && <ol className="operation-preview">{preview.operations.length ? preview.operations.map((operation, index) => <li key={`${operation.kind}-${operation.nodeId}-${index}`}><strong>{operation.kind}</strong><span>{operation.nodeId}{operation.profileId ? ` · ${operation.profileId}` : ""}</span></li>) : <li>No Orca operations are planned.</li>}</ol>}<small className="preview-boundary">Preview creates no Orca task, terminal, worktree, manifest, or Decision Gate.</small></section>
+        <section className={`run-readiness ${readiness.state}`} aria-live="polite"><div className="readiness-heading"><div><span className="eyebrow">RUN READINESS</span><strong>{readiness.state === "ready" ? "Ready to preview" : readiness.state === "blocked" ? "Blocked" : "Not checked"}</strong></div><span>{readiness.state}</span></div>{readiness.state === "unknown" && <p>Check this exact draft against its local profiles, toolkit, and Orca availability.</p>}{readiness.blockers.map((blocker, index) => <div className="readiness-blocker" key={`${blocker.message}-${index}`}><strong>{blocker.scope}</strong><p>{blocker.message}</p><small>{blocker.nextAction}</small>{blockerDestination(blocker, document.workflow?.nodes.map((node) => node.id) ?? []) && <button className="blocker-link" onClick={() => selectNode(blockerDestination(blocker, document.workflow?.nodes.map((node) => node.id) ?? [])!)}>Go to {blocker.nodeId}</button>}</div>)}<div className="readiness-actions"><button className="quiet-action" disabled={!projectPath || checkingReadiness} onClick={() => void checkReadiness()}>{checkingReadiness ? "Checking…" : "Check readiness"}</button><button className="preview-action" disabled={readiness.state !== "ready"} onClick={() => setShowPreview((open) => !open)}>{showPreview ? "Hide preview" : "Preview execution"}</button></div>{showPreview && preview && <ol className="operation-preview">{preview.operations.length ? preview.operations.map((operation, index) => <li key={`${operation.kind}-${operation.nodeId}-${index}`}><strong>{operation.kind}</strong><span>{operation.nodeId}{operation.profileId ? ` · ${operation.profileId}` : ""}</span></li>) : <li>No Orca operations are planned.</li>}</ol>}<small className="preview-boundary">Preview creates no Orca task, terminal, worktree, manifest, or Decision Gate.</small></section>
         {document.workflow?.runnerProfile === "agent-workflow" && <section className="conductor-configuration"><span className="eyebrow">AGENT WORKFLOW MODE</span><p>ARCHITECT → sandboxed CODEX → independent REVIEWER → independent VERIFIER → Release Captain. CODEX uses an isolated worktree; a current-head VERIFIER PASS artifact enables, but never resolves, the human release decision.</p></section>}
         {selectedNode ? <div className="inspector-form">
           <p className="node-id">{typeLabels[selectedNode.type]} · {selectedNode.id}</p>

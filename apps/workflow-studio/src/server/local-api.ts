@@ -38,7 +38,7 @@ export function createLocalApiServer(options: { projectRoot?: string } = {}) {
       else if (method === "POST" && url.pathname === "/api/workflow/validate") result = service.validate(string((await body(request)).source, "source"));
       else if (method === "POST" && url.pathname === "/api/workflow/save") { const input = await body(request); result = await service.save(string(input.projectPath, "projectPath"), string(input.source, "source")); }
       else if (method === "POST" && url.pathname === "/api/workflow/preview") { const input = await body(request); result = await service.preview(string(input.projectPath, "projectPath"), string(input.source, "source")); }
-      else if (method === "POST" && url.pathname === "/api/workflow/run") result = await service.run(await body(request) as never);
+      else if (method === "POST" && url.pathname === "/api/workflow/run") { const input = await body(request); result = await service.run(string(input.projectPath, "projectPath"), string(input.source, "source")); }
       else if (method === "POST" && url.pathname === "/api/capabilities/discover") result = await service.discoverCapabilities();
       else if (method === "GET" && url.pathname === "/api/configuration/portable") result = await service.readPortableConfiguration(string(url.searchParams.get("projectPath"), "projectPath"));
       else if (method === "POST" && url.pathname === "/api/configuration/portable/save") { const input = await body(request); result = await service.savePortableConfiguration(string(input.projectPath, "projectPath"), input.configuration as never); }

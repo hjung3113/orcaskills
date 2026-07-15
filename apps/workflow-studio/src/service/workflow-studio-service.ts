@@ -42,15 +42,14 @@ export class WorkflowStudioService {
     this.assertPermitted(projectPath);
     const document = parseWorkflow(source);
     if (!document.workflow || document.diagnostics.length) return { preflight: this.invalidSourcePreflight(document.diagnostics.map((diagnostic) => diagnostic.message)), operations: [] };
-    return new WorkflowRunner(new CommandOrcaCliAdapter()).preview({
-      projectPath,
-      workflow: document.workflow,
-      portableConfiguration: await this.readPortableConfiguration(projectPath),
-      workflowConfiguration: {},
-      localConfiguration: await this.readLocalConfiguration(projectPath),
-    });
+    return new WorkflowRunner(new CommandOrcaCliAdapter()).preview(await this.draftRequest(projectPath, document.workflow));
   }
-  run(request: WorkflowRunnerRequest) { this.assertPermitted(request.projectPath); return new WorkflowRunner(new CommandOrcaCliAdapter()).run(request); }
+  async run(projectPath: string, source: string) {
+    this.assertPermitted(projectPath);
+    const document = parseWorkflow(source);
+    if (!document.workflow || document.diagnostics.length) throw new Error("Fix workflow diagnostics before running.");
+    return new WorkflowRunner(new CommandOrcaCliAdapter()).run(await this.draftRequest(projectPath, document.workflow));
+  }
   discoverCapabilities() { return defaultCapabilityAdapterRegistry.discover(new NodeCapabilityProbeRunner()); }
   async readPortableConfiguration(projectPath: string): Promise<PortableConfiguration> {
     this.assertPermitted(projectPath);
@@ -69,6 +68,9 @@ export class WorkflowStudioService {
   }
   private invalidSourcePreflight(messages: string[]): PreflightResult {
     return { valid: false, resolvedProfileIds: {}, diagnostics: messages.map((message) => ({ code: "workflow", message })) };
+  }
+  private async draftRequest(projectPath: string, workflow: NonNullable<ReturnType<typeof parseWorkflow>["workflow"]>): Promise<WorkflowRunnerRequest> {
+    return { projectPath, workflow, portableConfiguration: await this.readPortableConfiguration(projectPath), workflowConfiguration: {}, localConfiguration: await this.readLocalConfiguration(projectPath) };
   }
   savePortableConfiguration(projectPath: string, configuration: PortableConfiguration) {
     this.assertPermitted(projectPath);

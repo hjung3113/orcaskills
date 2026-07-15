@@ -55,4 +55,25 @@ describe("local browser API", () => {
       await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
     }
   });
+
+  it("accepts the same Draft execution request shape for run without a raw runner payload", async () => {
+    const root = await mkdtemp(join(tmpdir(), "workflow-studio-run-"));
+    const project = join(root, "project");
+    directories.push(root);
+    await mkdir(join(project, ".git"), { recursive: true });
+    const server = createLocalApiServer({ projectRoot: root });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("Test server did not bind a TCP port.");
+    try {
+      const response = await fetch(`http://127.0.0.1:${address.port}/api/workflow/run`, {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ projectPath: project, source: "id: invalid\nnodes: []\n" }),
+      });
+      expect(response.status).toBe(400);
+      expect(await response.json()).toMatchObject({ error: "Fix workflow diagnostics before running." });
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    }
+  });
 });

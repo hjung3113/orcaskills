@@ -1,7 +1,7 @@
 import type { CapabilityDiscovery } from "../config/discovery";
 import type { PortableConfiguration } from "../shared/config";
 import type { WorkflowDocument, WorkflowFile } from "../shared/workflow";
-import type { RunManifest, WorkflowPreview, WorkflowRunnerRequest } from "../runner";
+import type { RunManifest, WorkflowPreview } from "../runner";
 
 /**
  * Renderer boundary shared by Electron IPC and the browser development API.
@@ -17,7 +17,7 @@ export interface WorkflowStudioClient {
   save(projectPath: string, source: string): Promise<string>;
   /** Server-side request assembly keeps machine-local configuration out of the renderer. */
   preview(projectPath: string, source: string): Promise<WorkflowPreview>;
-  run(request: WorkflowRunnerRequest): Promise<{ manifest: RunManifest; manifestPath: string }>;
+  run(projectPath: string, source: string): Promise<{ manifest: RunManifest; manifestPath: string }>;
   discoverCapabilities(): Promise<CapabilityDiscovery>;
   readPortableConfiguration(projectPath: string): Promise<PortableConfiguration>;
   savePortableConfiguration(projectPath: string, configuration: PortableConfiguration): Promise<string>;

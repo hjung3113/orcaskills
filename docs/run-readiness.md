@@ -18,6 +18,12 @@ Readiness combines the existing workflow validation with runner preflight: role/
 
 The renderer submits only the project path and workflow source. Electron or the local loopback API loads machine-local configuration itself. Toolkit paths, executable paths, credentials, and the raw local configuration do not enter the browser renderer.
 
+## Correcting a blocker
+
+When a blocker names a workflow node, it provides **Go to _node-id_**. Selecting it focuses that exact node on the canvas and opens its Inspector; Workflow Studio never guesses a destination from message text. The canvas also shows a text-backed **Blocked** badge on every affected node, so the blocked area is identifiable before reading the list. Machine-wide blockers, such as an unavailable Orca runtime, intentionally have no node link and instead give their local remediation.
+
+Any draft edit, project change, or saved portable-configuration change clears the previous result and its node badges. Check readiness again after the correction.
+
 ## Preview boundary
 
 **Preview execution** is available only after a Ready result. It shows the Orca operations that the runner would create, but creates no task, terminal, worktree, manifest, or Decision Gate. It is not an execution command, a release decision, or a live runtime dashboard.
