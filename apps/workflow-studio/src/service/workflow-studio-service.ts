@@ -1,13 +1,16 @@
 import { defaultCapabilityAdapterRegistry, NodeCapabilityProbeRunner } from "../config/discovery";
-import { readPortableConfiguration, savePortableConfiguration } from "../config/storage";
-import { CommandOrcaCliAdapter, WorkflowRunner, type WorkflowRunnerRequest } from "../runner";
+import { readLocalConfiguration, readPortableConfiguration, savePortableConfiguration } from "../config/storage";
+import { CommandOrcaCliAdapter, WorkflowRunner, type PreflightResult, type WorkflowPreview, type WorkflowRunnerRequest } from "../runner";
 import { isGitProject, listWorkflowFiles, readWorkflowFile, saveWorkflowFile } from "../shared/project";
 import { parseWorkflow } from "../shared/validation";
+import type { LocalConfiguration } from "../config/local";
 import type { PortableConfiguration } from "../shared/config";
 import { isAbsolute, relative, resolve, sep } from "node:path";
+import { homedir } from "node:os";
+import { join } from "node:path";
 
 export class WorkflowStudioService {
-  constructor(private readonly permittedProjectRoot?: string) {}
+  constructor(private readonly permittedProjectRoot?: string, private readonly localDataPath = process.env.ORCA_WORKFLOW_LOCAL_DATA_PATH ?? join(homedir(), ".orca-workflow-studio")) {}
 
   private assertPermitted(projectPath: string): void {
     if (!this.permittedProjectRoot) return;
@@ -34,7 +37,19 @@ export class WorkflowStudioService {
     if (!parsed.workflow || parsed.diagnostics.length) throw new Error("Fix validation diagnostics before saving.");
     return saveWorkflowFile(projectPath, parsed.workflow.id, source);
   }
-  preview(request: WorkflowRunnerRequest) { this.assertPermitted(request.projectPath); return new WorkflowRunner(new CommandOrcaCliAdapter()).preview(request); }
+  /** Builds the runner request here so browser and Electron renderers never read local configuration. */
+  async preview(projectPath: string, source: string): Promise<WorkflowPreview> {
+    this.assertPermitted(projectPath);
+    const document = parseWorkflow(source);
+    if (!document.workflow || document.diagnostics.length) return { preflight: this.invalidSourcePreflight(document.diagnostics.map((diagnostic) => diagnostic.message)), operations: [] };
+    return new WorkflowRunner(new CommandOrcaCliAdapter()).preview({
+      projectPath,
+      workflow: document.workflow,
+      portableConfiguration: await this.readPortableConfiguration(projectPath),
+      workflowConfiguration: {},
+      localConfiguration: await this.readLocalConfiguration(projectPath),
+    });
+  }
   run(request: WorkflowRunnerRequest) { this.assertPermitted(request.projectPath); return new WorkflowRunner(new CommandOrcaCliAdapter()).run(request); }
   discoverCapabilities() { return defaultCapabilityAdapterRegistry.discover(new NodeCapabilityProbeRunner()); }
   async readPortableConfiguration(projectPath: string): Promise<PortableConfiguration> {
@@ -44,6 +59,16 @@ export class WorkflowStudioService {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return { roles: [], profiles: [], presets: [] };
       throw error;
     }
+  }
+  private async readLocalConfiguration(projectPath: string): Promise<LocalConfiguration> {
+    try { return await readLocalConfiguration(this.localDataPath, projectPath); }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return { providers: {} };
+      throw error;
+    }
+  }
+  private invalidSourcePreflight(messages: string[]): PreflightResult {
+    return { valid: false, resolvedProfileIds: {}, diagnostics: messages.map((message) => ({ code: "workflow", message })) };
   }
   savePortableConfiguration(projectPath: string, configuration: PortableConfiguration) {
     this.assertPermitted(projectPath);

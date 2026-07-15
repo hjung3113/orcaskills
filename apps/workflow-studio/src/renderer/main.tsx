@@ -24,6 +24,7 @@ import { nodeTypes } from "../shared/workflow";
 import { serializeWorkflow } from "../shared/validation";
 import { createAgentWorkflow } from "../shared/agent-workflow";
 import { workflowStudioClient } from "../client";
+import { currentPreview, previewReadiness, staticReadiness, type CheckedPreview } from "./readiness";
 import "@xyflow/react/dist/style.css";
 import "./styles.css";
 
@@ -100,6 +101,9 @@ function Studio() {
   const [savedPortableConfiguration, setSavedPortableConfiguration] = useState<PortableConfiguration>({ roles: [], profiles: [], presets: [] });
   const [showConfigurationReview, setShowConfigurationReview] = useState(false);
   const [capabilities, setCapabilities] = useState<CapabilityDiscovery>();
+  const [checkedPreview, setCheckedPreview] = useState<CheckedPreview>();
+  const [checkingReadiness, setCheckingReadiness] = useState(false);
+  const [showPreview, setShowPreview] = useState(false);
   const [canvasNodes, setCanvasNodes, onNodesChange] = useNodesState<CanvasNode>([]);
   const { fitView } = useReactFlow();
 
@@ -126,6 +130,10 @@ function Studio() {
   const selectedProfile = portableConfiguration.profiles.find((profile) => profile.id === selectedProfileId);
   const selectedCapability = capabilities?.providers.find((provider) => provider.providerId === selectedProfile?.provider);
   const configurationReview = reviewPortableConfiguration(savedPortableConfiguration, portableConfiguration);
+  const preview = currentPreview(checkedPreview, projectPath, source);
+  const readiness = !projectPath
+    ? { state: "unknown" as const, blockers: [] }
+    : staticReadiness(document.diagnostics) ?? previewReadiness(preview);
 
   async function refreshCapabilities() {
     try { setCapabilities(await workflowStudioClient.discoverCapabilities()); setMessage("Local capabilities refreshed."); }
@@ -134,7 +142,7 @@ function Studio() {
 
   async function savePortableConfiguration() {
     if (!projectPath) return;
-    try { await workflowStudioClient.savePortableConfiguration(projectPath, portableConfiguration); setSavedPortableConfiguration(portableConfiguration); setShowConfigurationReview(false); setMessage("Configuration saved."); }
+    try { await workflowStudioClient.savePortableConfiguration(projectPath, portableConfiguration); setSavedPortableConfiguration(portableConfiguration); setCheckedPreview(undefined); setShowConfigurationReview(false); setMessage("Configuration saved. Check readiness again."); }
     catch (error) { setMessage(error instanceof Error ? error.message : "Could not save configuration."); }
   }
 
@@ -158,6 +166,8 @@ function Studio() {
       const configuration = await workflowStudioClient.readPortableConfiguration(selected);
       setPortableConfiguration(configuration);
       setSavedPortableConfiguration(configuration);
+      setCheckedPreview(undefined);
+      setShowPreview(false);
       setMessage(`Opened ${selected}`);
       void refreshCapabilities();
     } catch (error) { setMessage(error instanceof Error ? error.message : "Could not open project."); }
@@ -175,6 +185,19 @@ function Studio() {
       setWorkflows(await workflowStudioClient.listWorkflows(projectPath));
       setMessage(`Saved ${path}`);
     } catch (error) { setMessage(error instanceof Error ? error.message : "Could not save workflow."); }
+  }
+
+  async function checkReadiness() {
+    if (!projectPath) { setMessage("Open a Git project before checking readiness."); return; }
+    if (document.diagnostics.length) { setCheckedPreview(undefined); setShowPreview(false); setMessage("Fix workflow diagnostics before checking readiness."); return; }
+    setCheckingReadiness(true);
+    setShowPreview(false);
+    try {
+      const next = await workflowStudioClient.preview(projectPath, source);
+      setCheckedPreview({ projectPath, source, preview: next });
+      setMessage(next.preflight.valid ? "Run readiness passed. Preview execution is available." : "Run readiness is blocked. Review the blockers.");
+    } catch (error) { setCheckedPreview(undefined); setMessage(error instanceof Error ? error.message : "Could not check run readiness."); }
+    finally { setCheckingReadiness(false); }
   }
 
   function addNode(type: WorkflowNodeType) {
@@ -236,7 +259,7 @@ function Studio() {
   }
 
   return <main className="studio-shell">
-    <header className="studio-header"><div className="header-title"><span className="eyebrow">WORKFLOW /</span><strong>{document.workflow?.name ?? "New workflow"}</strong><small>{message}</small></div><div className="header-actions"><span className={document.diagnostics.length ? "status invalid" : "status"}>{document.diagnostics.length ? "Needs attention" : "Valid"}</span><button className="quiet-action" onClick={refreshCapabilities}>Refresh capabilities</button>{workflowStudioClient.kind === "web" && <input className="web-project-path" aria-label="Web project path" value={webProjectPath} onChange={(event) => setWebProjectPath(event.target.value)} placeholder="/absolute/path/to/project" />}<button className="quiet-action" onClick={openProject}>{workflowStudioClient.kind === "web" ? "Open path" : "Open project"}</button><button className="save-action" disabled={!projectPath || document.diagnostics.length > 0} onClick={saveWorkflow}>Save workflow</button></div></header>
+    <header className="studio-header"><div className="header-title"><span className="eyebrow">WORKFLOW /</span><strong>{document.workflow?.name ?? "New workflow"}</strong><small>{message}</small></div><div className="header-actions"><span className={document.diagnostics.length ? "status invalid" : "status"}>{document.diagnostics.length ? "Needs attention" : "Valid"}</span><button className="quiet-action" onClick={refreshCapabilities}>Refresh capabilities</button>{workflowStudioClient.kind === "web" && <input className="web-project-path" aria-label="Web project path" value={webProjectPath} onChange={(event) => setWebProjectPath(event.target.value)} placeholder="/absolute/path/to/project" />}<button className="quiet-action" onClick={openProject}>{workflowStudioClient.kind === "web" ? "Open path" : "Open project"}</button><button className="quiet-action" disabled={!projectPath || checkingReadiness} onClick={() => void checkReadiness()}>{checkingReadiness ? "Checking…" : "Check readiness"}</button><button className="save-action" disabled={!projectPath || document.diagnostics.length > 0} onClick={saveWorkflow}>Save workflow</button></div></header>
     <section className={`studio-layout ${outlineOpen ? "outline-open" : "outline-collapsed"}`}>
       <aside className="outline" aria-label="Workflow navigation">
         <div className="studio-brand"><span>✦</span><strong>Workflow Studio</strong></div>
@@ -257,6 +280,7 @@ function Studio() {
       </section>
       <aside className="inspector" aria-label="Node inspector">
         <div className="inspector-heading"><div><span className="eyebrow">SELECTED STEP</span><h2>Inspector</h2></div><span className="inspector-badge">{selectedNode ? typeLabels[selectedNode.type] : "—"}</span></div>
+        <section className={`run-readiness ${readiness.state}`} aria-live="polite"><div className="readiness-heading"><div><span className="eyebrow">RUN READINESS</span><strong>{readiness.state === "ready" ? "Ready to preview" : readiness.state === "blocked" ? "Blocked" : "Not checked"}</strong></div><span>{readiness.state}</span></div>{readiness.state === "unknown" && <p>Check this exact draft against its local profiles, toolkit, and Orca availability.</p>}{readiness.blockers.map((blocker, index) => <div className="readiness-blocker" key={`${blocker.message}-${index}`}><strong>{blocker.scope}</strong><p>{blocker.message}</p><small>{blocker.nextAction}</small></div>)}<div className="readiness-actions"><button className="quiet-action" disabled={!projectPath || checkingReadiness} onClick={() => void checkReadiness()}>{checkingReadiness ? "Checking…" : "Check readiness"}</button><button className="preview-action" disabled={readiness.state !== "ready"} onClick={() => setShowPreview((open) => !open)}>{showPreview ? "Hide preview" : "Preview execution"}</button></div>{showPreview && preview && <ol className="operation-preview">{preview.operations.length ? preview.operations.map((operation, index) => <li key={`${operation.kind}-${operation.nodeId}-${index}`}><strong>{operation.kind}</strong><span>{operation.nodeId}{operation.profileId ? ` · ${operation.profileId}` : ""}</span></li>) : <li>No Orca operations are planned.</li>}</ol>}<small className="preview-boundary">Preview creates no Orca task, terminal, worktree, manifest, or Decision Gate.</small></section>
         {document.workflow?.runnerProfile === "agent-workflow" && <section className="conductor-configuration"><span className="eyebrow">AGENT WORKFLOW MODE</span><p>ARCHITECT → sandboxed CODEX → independent REVIEWER → independent VERIFIER → Release Captain. CODEX uses an isolated worktree; a current-head VERIFIER PASS artifact enables, but never resolves, the human release decision.</p></section>}
         {selectedNode ? <div className="inspector-form">
           <p className="node-id">{typeLabels[selectedNode.type]} · {selectedNode.id}</p>

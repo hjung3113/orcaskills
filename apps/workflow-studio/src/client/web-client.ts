@@ -27,7 +27,7 @@ export function createWebClient(): WorkflowStudioClient {
     readWorkflow: (path) => request<string>("/api/workflow/read", { path }),
     validate: (source) => request<WorkflowDocument>("/api/workflow/validate", { source }),
     save: (projectPath, source) => request<string>("/api/workflow/save", { projectPath, source }),
-    preview: (input) => request<WorkflowPreview>("/api/workflow/preview", input),
+    preview: (projectPath, source) => request<WorkflowPreview>("/api/workflow/preview", { projectPath, source }),
     run: (input) => request<{ manifest: RunManifest; manifestPath: string }>("/api/workflow/run", input),
     discoverCapabilities: () => request<CapabilityDiscovery>("/api/capabilities/discover", {}),
     readPortableConfiguration: (projectPath) => request<PortableConfiguration>(`/api/configuration/portable?projectPath=${encodeURIComponent(projectPath)}`),

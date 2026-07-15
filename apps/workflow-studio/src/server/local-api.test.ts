@@ -30,4 +30,29 @@ describe("local browser API", () => {
       await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
     }
   });
+
+  it("builds a blocked preview from source server-side without accepting local configuration", async () => {
+    const root = await mkdtemp(join(tmpdir(), "workflow-studio-preview-"));
+    const project = join(root, "project");
+    directories.push(root);
+    await mkdir(join(project, ".git"), { recursive: true });
+    const server = createLocalApiServer({ projectRoot: root });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("Test server did not bind a TCP port.");
+    try {
+      const response = await fetch(`http://127.0.0.1:${address.port}/api/workflow/preview`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ projectPath: project, source: "id: invalid\nnodes: []\n" }),
+      });
+      expect(response.status).toBe(200);
+      const payload = await response.json() as { result: { preflight: { valid: boolean; diagnostics: { code: string }[] }; operations: unknown[] } };
+      expect(payload.result.preflight.valid).toBe(false);
+      expect(payload.result.preflight.diagnostics).toEqual(expect.arrayContaining([{ code: "workflow", message: expect.any(String) }]));
+      expect(payload.result.operations).toEqual([]);
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    }
+  });
 });

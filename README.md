@@ -116,6 +116,12 @@ Choose **✦ Agent Workflow** from the workflow list to create the fixed visual 
 
 The template is portable; the toolkit root stays in the machine-local configuration. See the complete [Agent Workflow UI and setup example](docs/agent-workflow-example.md), [PRD](.scratch/agent-workflow-mode/prd.md), and [ADR](docs/adr/0002-agent-workflow-template-and-runner-profile.md).
 
+### Run Readiness and execution preview
+
+Choose **Check readiness** before a run to evaluate the exact draft against its workflow diagnostics, role/profile and Conductor configuration, required local toolkit, Orca CLI, and Orca runtime. The Inspector reports **Not checked**, **Blocked**, or **Ready to preview**. Every blocker names its scope, reason, and next action; changing the draft, project, or saved portable configuration invalidates an earlier result.
+
+Only a Ready result enables **Preview execution**. Preview lists the planned Orca operations but creates no task, terminal, worktree, manifest, or Decision Gate. The renderer never receives machine-local paths or credentials; Electron or the loopback local API builds the runner request from server-owned configuration. See [Run Readiness](docs/run-readiness.md) for the complete behavior and boundary.
+
 ## Running workflows from Orca
 
 The project-local [`orca-workflow`](.agents/skills/orca-workflow/SKILL.md) skill exposes the same command boundary to Codex and Claude terminals:
@@ -155,7 +161,7 @@ examples/agent-workflow/   Portable Agent Workflow example
 The test suite covers workflow parsing and round trips, configuration resolution, the runner adapter boundary, approvals/failure pauses, parallel Worktree safety, command operations, and representative mock end-to-end workflows.
 
 ```text
-48 tests passing
+53 tests passing
 TypeScript typecheck passing
 Production build passing
 Electron startup uses the production CommonJS Electron entrypoint

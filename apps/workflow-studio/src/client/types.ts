@@ -15,7 +15,8 @@ export interface WorkflowStudioClient {
   readWorkflow(path: string): Promise<string>;
   validate(source: string): Promise<WorkflowDocument>;
   save(projectPath: string, source: string): Promise<string>;
-  preview(request: WorkflowRunnerRequest): Promise<WorkflowPreview>;
+  /** Server-side request assembly keeps machine-local configuration out of the renderer. */
+  preview(projectPath: string, source: string): Promise<WorkflowPreview>;
   run(request: WorkflowRunnerRequest): Promise<{ manifest: RunManifest; manifestPath: string }>;
   discoverCapabilities(): Promise<CapabilityDiscovery>;
   readPortableConfiguration(projectPath: string): Promise<PortableConfiguration>;
