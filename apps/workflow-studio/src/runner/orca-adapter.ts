@@ -103,4 +103,6 @@ export class CommandOrcaCliAdapter implements OrcaCliAdapter {
       return [{ gateId, status: gate.status, ...(resolution ? { resolution } : {}) }];
     });
   }
+  async closeTerminal(terminalId: string): Promise<void> { await this.run(["terminal", "close", "--terminal", terminalId]); }
+  async removeWorktree(worktreeId: string): Promise<void> { await this.run(["worktree", "rm", "--worktree", `id:${worktreeId}`, "--force"]); }
 }

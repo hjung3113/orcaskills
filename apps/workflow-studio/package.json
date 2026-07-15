@@ -5,7 +5,9 @@
   "type": "module",
   "main": "dist/electron/main.cjs",
   "scripts": {
-    "dev": "vite --host 127.0.0.1",
+    "dev": "vite",
+    "build:server": "esbuild src/server/main.ts --bundle --platform=node --format=cjs --outfile=dist/server/local-api.cjs",
+    "web:server": "npm run build:server && node dist/server/local-api.cjs",
     "build": "vite build && esbuild electron/main.ts electron/preload.ts --bundle --platform=node --format=cjs --external:electron --outdir=dist/electron --out-extension:.js=.cjs",
     "start": "electron .",
     "test": "vitest run",

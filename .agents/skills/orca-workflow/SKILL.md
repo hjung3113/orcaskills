@@ -28,3 +28,22 @@ The command reads portable workflow configuration from the project and
 machine-local provider configuration from the Workflow Studio local-data path.
 Do not put executable paths, credentials, or local profile settings in the
 project workflow file.
+
+## Agent Workflow mode
+
+When a workflow declares `runnerProfile: agent-workflow` and the
+`agent-workflow` template reference, the command validates the fixed
+ARCHITECT -> CODEX -> REVIEWER -> VERIFIER -> Release Captain flow in addition
+to ordinary graph and profile checks. The Agent Workflow toolkit root is
+machine-local; the portable YAML never supplies a shell command or path.
+
+The dedicated runner profile dispatches CODEX only through its reviewed
+`codex-safe.sh`/cmux toolkit boundary, keeps CODEX isolated, records role pane
+and worktree resources in the manifest, and evaluates the canonical current
+head `.review/ISSUE-<N>-VERIFY.json` evidence artifact. A valid VERIFIER PASS
+artifact enables an Orca Release Captain Decision Gate. This skill, the
+Conductor, and the runner must never resolve that gate, merge, push, or release
+on the user's behalf.
+
+For the UI creation and local setup flow, see
+`docs/agent-workflow-example.md`.

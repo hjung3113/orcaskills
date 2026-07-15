@@ -1,6 +1,7 @@
 import { parseDocument, stringify } from "yaml";
 import type { Diagnostic, Workflow, WorkflowDocument, WorkflowNode } from "./workflow";
 import { nodeTypes } from "./workflow";
+import { validateAgentWorkflow } from "./agent-workflow";
 
 const nodeTypeSet = new Set<string>(nodeTypes);
 
@@ -97,6 +98,7 @@ function validateGraph(workflow: Workflow, source: string): Diagnostic[] {
       diagnostics.push(diagnostic(source, "reachability", `End node "${end.id}" is not reachable from a Start node.`, end.id));
     }
   }
+  diagnostics.push(...validateAgentWorkflow(workflow));
   return diagnostics;
 }
 
@@ -127,6 +129,9 @@ export function parseWorkflow(source: string): WorkflowDocument {
     id: value.id,
     ...(typeof value.name === "string" ? { name: value.name } : {}),
     nodes: value.nodes.map((node) => ({ ...node, id: String(node.id ?? ""), type: String(node.type ?? "") as WorkflowNode["type"] })),
+    ...(value.runnerProfile === "generic" || value.runnerProfile === "agent-workflow" ? { runnerProfile: value.runnerProfile } : {}),
+    ...(isRecord(value.template) && value.template.id === "agent-workflow" && value.template.version === 1 && typeof value.template.issueNumber === "number"
+      ? { template: { id: "agent-workflow", version: 1, issueNumber: value.template.issueNumber } } : {}),
   };
   return { workflow, diagnostics: validateGraph(workflow, source) };
 }

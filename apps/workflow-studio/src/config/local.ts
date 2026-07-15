@@ -15,7 +15,14 @@ export interface LocalProfileConfiguration {
   credentialEnvironmentVariable?: string;
 }
 
+/** Machine-only, reviewed boundary for the installed Agent Workflow toolkit. */
+export interface AgentWorkflowLocalConfiguration {
+  enabled: boolean;
+  toolkitRoot?: string;
+}
+
 export interface LocalConfiguration {
   providers: Record<string, LocalProviderConfiguration>;
   profiles?: Record<string, LocalProfileConfiguration>;
+  agentWorkflow?: AgentWorkflowLocalConfiguration;
 }

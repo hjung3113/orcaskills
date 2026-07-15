@@ -1,0 +1,43 @@
+id: agent-workflow
+name: Agent Workflow
+runnerProfile: agent-workflow
+template:
+  id: agent-workflow
+  version: 1
+  issueNumber: 42
+nodes:
+  - id: start
+    type: start
+  - id: architect
+    type: agent
+    name: ARCHITECT
+    roleId: architect
+    dependsOn: [start]
+    outputs: [design]
+  - id: implement
+    type: agent
+    name: CODEX implementation
+    roleId: implementer
+    dependsOn: [architect]
+    worktree: isolated
+    outputs: [implementation]
+  - id: review
+    type: agent
+    name: REVIEWER
+    roleId: reviewer
+    dependsOn: [implement]
+    outputs: [review]
+  - id: verify
+    type: agent
+    name: VERIFIER
+    roleId: verifier
+    dependsOn: [review]
+    outputs: [verification-evidence]
+  - id: release
+    type: approval
+    name: Release Captain decision
+    dependsOn: [verify]
+    prompt: "Release Captain: review valid VERIFIER evidence before deciding."
+  - id: end
+    type: end
+    dependsOn: [release]

@@ -1,6 +1,7 @@
 import type { LocalConfiguration } from "../config/local";
 import type { PortableConfiguration, WorkflowConfiguration } from "../shared/config";
 import type { Workflow } from "../shared/workflow";
+import type { AgentWorkflowIdentity, VerificationEvidence } from "./agent-workflow";
 
 export interface StructuredHandoff {
   fromNodeId: string;
@@ -52,6 +53,8 @@ export interface OrcaCliAdapter {
   waitForGateResolution(input: { gateId: string }): Promise<GateResolution>;
   /** Read-only inspection used by the project-local workflow command. */
   listDecisionGates?(): Promise<DecisionGateStatus[]>;
+  closeTerminal?(terminalId: string): Promise<void>;
+  removeWorktree?(worktreeId: string): Promise<void>;
 }
 
 export interface WorkflowRunnerRequest {
@@ -64,6 +67,10 @@ export interface WorkflowRunnerRequest {
   conductorHandoffSummary?: string;
   /** Structured results available for condition branch selection. */
   conditionOutputs?: Record<string, Record<string, unknown>>;
+  /** Test seam; production loads the canonical `.review` artifact after verification. */
+  agentWorkflowEvidence?: VerificationEvidence;
+  /** Test seam; production resolves branch and head from the prepared worktree. */
+  agentWorkflowIdentity?: AgentWorkflowIdentity;
 }
 
 export type RunnerDiagnosticCode = "workflow" | "configuration" | "orca-cli" | "orca-runtime" | "agent-node" | "condition" | "mapping" | "parallel" | "worktree-safety";
@@ -132,4 +139,11 @@ export interface RunManifest {
   pauses: RunManifestPause[];
   activePause?: RunManifestActivePause;
   status: "running" | "completed" | "terminated";
+  agentWorkflow?: {
+    templateVersion: 1;
+    identity: AgentWorkflowIdentity;
+    resourceLease: { evidenceDirectory: string; worktreeId?: string; terminalIds: string[] };
+    evidence: { valid: boolean; reason?: string; path: string };
+    cleanup?: { completedAt: string; releasedResources: boolean; evidenceArchived: boolean };
+  };
 }

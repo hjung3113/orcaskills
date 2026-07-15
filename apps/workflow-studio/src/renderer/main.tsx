@@ -22,6 +22,8 @@ import type { PortableConfiguration } from "../shared/config";
 import { applyPortablePreset, reviewPortableConfiguration } from "../config/staging";
 import { nodeTypes } from "../shared/workflow";
 import { serializeWorkflow } from "../shared/validation";
+import { createAgentWorkflow } from "../shared/agent-workflow";
+import { workflowStudioClient } from "../client";
 import "@xyflow/react/dist/style.css";
 import "./styles.css";
 
@@ -87,6 +89,7 @@ function toList(value: unknown): string {
 
 function Studio() {
   const [projectPath, setProjectPath] = useState<string>();
+  const [webProjectPath, setWebProjectPath] = useState("");
   const [workflows, setWorkflows] = useState<WorkflowFile[]>([]);
   const [source, setSource] = useState(starterWorkflow);
   const [document, setDocument] = useState<WorkflowDocument>({ diagnostics: [] });
@@ -102,7 +105,7 @@ function Studio() {
 
   useEffect(() => {
     let current = true;
-    window.workflowStudio.validate(source).then((next) => {
+    workflowStudioClient.validate(source).then((next) => {
       if (!current) return;
       setDocument(next);
       setCanvasNodes((prior) => toCanvasNodes(next.workflow, prior));
@@ -123,13 +126,13 @@ function Studio() {
   const configurationReview = reviewPortableConfiguration(savedPortableConfiguration, portableConfiguration);
 
   async function refreshCapabilities() {
-    try { setCapabilities(await window.workflowStudio.discoverCapabilities()); setMessage("Local capabilities refreshed."); }
+    try { setCapabilities(await workflowStudioClient.discoverCapabilities()); setMessage("Local capabilities refreshed."); }
     catch { setMessage("Could not refresh local capabilities."); }
   }
 
   async function savePortableConfiguration() {
     if (!projectPath) return;
-    try { await window.workflowStudio.savePortableConfiguration(projectPath, portableConfiguration); setSavedPortableConfiguration(portableConfiguration); setShowConfigurationReview(false); setMessage("Configuration saved."); }
+    try { await workflowStudioClient.savePortableConfiguration(projectPath, portableConfiguration); setSavedPortableConfiguration(portableConfiguration); setShowConfigurationReview(false); setMessage("Configuration saved."); }
     catch (error) { setMessage(error instanceof Error ? error.message : "Could not save configuration."); }
   }
 
@@ -145,11 +148,12 @@ function Studio() {
 
   async function openProject() {
     try {
-      const selected = await window.workflowStudio.selectProject();
+      const selected = await workflowStudioClient.openProject(workflowStudioClient.kind === "web" ? webProjectPath : undefined);
       if (!selected) return;
       setProjectPath(selected);
-      setWorkflows(await window.workflowStudio.listWorkflows(selected));
-      const configuration = await window.workflowStudio.readPortableConfiguration(selected);
+      setWebProjectPath(selected);
+      setWorkflows(await workflowStudioClient.listWorkflows(selected));
+      const configuration = await workflowStudioClient.readPortableConfiguration(selected);
       setPortableConfiguration(configuration);
       setSavedPortableConfiguration(configuration);
       setMessage(`Opened ${selected}`);
@@ -158,15 +162,15 @@ function Studio() {
   }
 
   async function loadWorkflow(workflow: WorkflowFile) {
-    setSource(await window.workflowStudio.readWorkflow(workflow.path));
+    setSource(await workflowStudioClient.readWorkflow(workflow.path));
     setMessage(`Loaded ${workflow.id}`);
   }
 
   async function saveWorkflow() {
     if (!projectPath || document.diagnostics.length > 0) return;
     try {
-      const path = await window.workflowStudio.save(projectPath, source);
-      setWorkflows(await window.workflowStudio.listWorkflows(projectPath));
+      const path = await workflowStudioClient.save(projectPath, source);
+      setWorkflows(await workflowStudioClient.listWorkflows(projectPath));
       setMessage(`Saved ${path}`);
     } catch (error) { setMessage(error instanceof Error ? error.message : "Could not save workflow."); }
   }
@@ -212,13 +216,14 @@ function Studio() {
   }
 
   return <main className="studio-shell">
-    <header className="studio-header"><div className="header-title"><span className="eyebrow">WORKFLOW /</span><strong>{document.workflow?.name ?? "New workflow"}</strong><small>{message}</small></div><div className="header-actions"><span className={document.diagnostics.length ? "status invalid" : "status"}>{document.diagnostics.length ? "Needs attention" : "Valid"}</span><button className="quiet-action" onClick={refreshCapabilities}>Refresh capabilities</button><button className="quiet-action" onClick={openProject}>Open project</button><button className="save-action" disabled={!projectPath || document.diagnostics.length > 0} onClick={saveWorkflow}>Save workflow</button></div></header>
+    <header className="studio-header"><div className="header-title"><span className="eyebrow">WORKFLOW /</span><strong>{document.workflow?.name ?? "New workflow"}</strong><small>{message}</small></div><div className="header-actions"><span className={document.diagnostics.length ? "status invalid" : "status"}>{document.diagnostics.length ? "Needs attention" : "Valid"}</span><button className="quiet-action" onClick={refreshCapabilities}>Refresh capabilities</button>{workflowStudioClient.kind === "web" && <input className="web-project-path" aria-label="Web project path" value={webProjectPath} onChange={(event) => setWebProjectPath(event.target.value)} placeholder="/absolute/path/to/project" />}<button className="quiet-action" onClick={openProject}>{workflowStudioClient.kind === "web" ? "Open path" : "Open project"}</button><button className="save-action" disabled={!projectPath || document.diagnostics.length > 0} onClick={saveWorkflow}>Save workflow</button></div></header>
     <section className={`studio-layout ${outlineOpen ? "outline-open" : "outline-collapsed"}`}>
       <aside className="outline" aria-label="Workflow navigation">
         <div className="studio-brand"><span>✦</span><strong>Workflow Studio</strong></div>
         <button className="project-switch" onClick={openProject}><i />{projectPath ? projectPath.split("/").pop() : "Select Git project"}<b>›</b></button>
         <div className="panel-heading"><h2>Workflows</h2><button aria-label="Collapse steps outline" className="icon-button" onClick={() => setOutlineOpen(false)}>‹</button></div>
         <button className="new-workflow" onClick={() => { setSource(starterWorkflow); setMessage("New workflow"); }}>+ New workflow</button>
+        <button className="new-workflow" onClick={() => { commit(createAgentWorkflow()); setMessage("Agent Workflow template created. Configure its four role profiles before running."); }}>✦ Agent Workflow</button>
         {workflows.map((workflow) => <button className="workflow" key={workflow.path} onClick={() => loadWorkflow(workflow)}>{workflow.id}</button>)}
         <div className="steps-heading"><h2>Steps</h2><span>{document.workflow?.nodes.length ?? 0}</span></div>
         <nav>{document.workflow?.nodes.map((node) => <button className={`outline-step ${node.id === selectedId ? "active" : ""}`} key={node.id} onClick={() => selectNode(node.id)}><span>{typeLabels[node.type]}</span>{displayName(node)}</button>)}</nav>
@@ -232,6 +237,7 @@ function Studio() {
       </section>
       <aside className="inspector" aria-label="Node inspector">
         <div className="inspector-heading"><div><span className="eyebrow">SELECTED STEP</span><h2>Inspector</h2></div><span className="inspector-badge">{selectedNode ? typeLabels[selectedNode.type] : "—"}</span></div>
+        {document.workflow?.runnerProfile === "agent-workflow" && <section className="conductor-configuration"><span className="eyebrow">AGENT WORKFLOW MODE</span><p>ARCHITECT → sandboxed CODEX → independent REVIEWER → independent VERIFIER → Release Captain. CODEX uses an isolated worktree; a current-head VERIFIER PASS artifact enables, but never resolves, the human release decision.</p></section>}
         {selectedNode ? <div className="inspector-form">
           <p className="node-id">{typeLabels[selectedNode.type]} · {selectedNode.id}</p>
           {selectedNode.type === "agent" && <section className="agent-configuration"><span className="eyebrow">GUIDED CONFIGURATION</span><label>Role<select aria-label="Agent role" value={selectedRoleId} onChange={(event) => editSelected("roleId", event.target.value)}><option value="">Select a role</option>{portableConfiguration.roles.map((role) => <option key={role.id} value={role.id}>{role.id} — {role.intent}</option>)}</select></label><label>Profile<select aria-label="Agent profile" value={selectedRole?.profileId ?? ""} disabled={!selectedRole} onChange={(event) => { setShowConfigurationReview(false); setPortableConfiguration((current) => ({ ...current, roles: current.roles.map((role) => role.id === selectedRole?.id ? { ...role, profileId: event.target.value } : role) })); }}><option value="">Select a profile</option>{portableConfiguration.profiles.map((profile) => { const capability = capabilities?.providers.find((provider) => provider.providerId === profile.provider); return <option key={profile.id} value={profile.id} disabled={capability?.availability === "unavailable"}>{profile.id} · {profile.provider} / {profile.model}{capability?.availability === "unavailable" ? " — unavailable" : ""}</option>; })}</select></label><label>Apply preset<select aria-label="Configuration preset" defaultValue="" onChange={(event) => { if (!event.target.value) return; const applied = applyPortablePreset(portableConfiguration, event.target.value); editSelected("roleId", applied.preset.roleId); setPortableConfiguration(applied.configuration); setShowConfigurationReview(false); }}><option value="">Choose a preset</option>{(portableConfiguration.presets ?? []).map((preset) => <option key={preset.id} value={preset.id}>{preset.id}</option>)}</select></label><p className="capability-status">{selectedCapability ? `${selectedCapability.displayName}: ${selectedCapability.diagnostic ?? selectedCapability.availability}` : "Select a profile to check local availability."}</p>{showConfigurationReview && <p className="capability-status">Review: {configurationReview.hasChanges ? `roles ${configurationReview.changedRoles.join(", ") || "—"}; profiles ${configurationReview.changedProfiles.join(", ") || "—"}; presets ${configurationReview.changedPresets.join(", ") || "—"}` : "No portable configuration changes."}</p>}<button className="quiet-action" disabled={!projectPath || !configurationReview.hasChanges} onClick={() => showConfigurationReview ? void savePortableConfiguration() : setShowConfigurationReview(true)}>{showConfigurationReview ? "Confirm save" : "Review configuration"}</button></section>}

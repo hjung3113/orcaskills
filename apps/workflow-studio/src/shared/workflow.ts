@@ -2,6 +2,16 @@ export const nodeTypes = ["start", "agent", "approval", "condition", "parallel",
 
 export type WorkflowNodeType = (typeof nodeTypes)[number];
 
+export const runnerProfiles = ["generic", "agent-workflow"] as const;
+export type RunnerProfile = (typeof runnerProfiles)[number];
+
+export interface WorkflowTemplateReference {
+  id: "agent-workflow";
+  version: 1;
+  /** GitHub/local issue number used to bind verifier evidence. */
+  issueNumber: number;
+}
+
 export interface WorkflowNode {
   id: string;
   type: WorkflowNodeType;
@@ -14,6 +24,8 @@ export interface Workflow {
   name?: string;
   nodes: WorkflowNode[];
   conductor?: ConductorConfiguration;
+  runnerProfile?: RunnerProfile;
+  template?: WorkflowTemplateReference;
 }
 
 export interface Diagnostic {

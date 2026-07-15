@@ -1,4 +1,8 @@
 import { randomUUID } from "node:crypto";
+import { execFile } from "node:child_process";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
+import { promisify } from "node:util";
 import { createReadOnlyConductor } from "../config/conductor";
 import { resolveNodeAgentProfile, validateConfiguration } from "../config/resolution";
 import { parseWorkflow, serializeWorkflow } from "../shared/validation";
@@ -6,10 +10,13 @@ import type { WorkflowNode } from "../shared/workflow";
 import { writeRunManifest } from "./manifest";
 import { approvalGate, pauseRecord, recoveryGate } from "./pause";
 import { inputMappings, selectedBranchNodeIds, validateParallelWorkflow, worktreeMode } from "./parallel";
+import { AgentWorkflowToolkitAdapter, type AgentWorkflowIdentity, validateVerificationEvidence } from "./agent-workflow";
 import type {
   DispatchInput, OrcaCliAdapter, PlannedOperation, PreflightResult, RunManifest, RunManifestNode,
   RunnerDiagnostic, StructuredHandoff, WorkflowPreview, WorkflowRunnerRequest,
 } from "./types";
+
+const execFileAsync = promisify(execFile);
 
 export class WorkflowPreflightError extends Error {
   constructor(readonly preflight: PreflightResult) {
@@ -92,6 +99,26 @@ function promptFor(node: WorkflowNode, roleIntent: string): string {
   return typeof node.prompt === "string" ? node.prompt : roleIntent;
 }
 
+async function liveIdentity(projectPath: string, issueNumber: number): Promise<AgentWorkflowIdentity> {
+  const [branch, head] = await Promise.all([
+    execFileAsync("git", ["-C", projectPath, "branch", "--show-current"]).then(({ stdout }) => stdout.trim()),
+    execFileAsync("git", ["-C", projectPath, "rev-parse", "HEAD"]).then(({ stdout }) => stdout.trim()),
+  ]);
+  if (!branch || !head) throw new Error("Agent Workflow requires a checked-out Git branch and HEAD.");
+  return { issueNumber, branch, headSha: head };
+}
+
+function isAgentWorkflow(request: WorkflowRunnerRequest): boolean {
+  return request.workflow.runnerProfile === "agent-workflow" && request.workflow.template?.id === "agent-workflow";
+}
+
+async function verifierEvidence(request: WorkflowRunnerRequest, issueNumber: number): Promise<{ evidence: import("./agent-workflow").VerificationEvidence | undefined; path: string }> {
+  const path = join(request.projectPath, ".review", `ISSUE-${issueNumber}-VERIFY.json`);
+  if (request.agentWorkflowEvidence) return { evidence: request.agentWorkflowEvidence, path };
+  try { return { evidence: JSON.parse(await readFile(path, "utf8")) as import("./agent-workflow").VerificationEvidence, path }; }
+  catch { return { evidence: undefined, path }; }
+}
+
 export class WorkflowRunner {
   constructor(private readonly adapter: OrcaCliAdapter) {}
 
@@ -122,6 +149,10 @@ export class WorkflowRunner {
     if (workflowConfiguration.conductor?.enabled) {
       try { createReadOnlyConductor(workflowConfiguration.conductor); }
       catch (error) { diagnostics.push({ code: "configuration", message: error instanceof Error ? error.message : "Conductor configuration is invalid." }); }
+    }
+    if (isAgentWorkflow(request)) {
+      const toolkit = new AgentWorkflowToolkitAdapter(request.localConfiguration.agentWorkflow);
+      diagnostics.push(...(await toolkit.preflight()).map((message) => ({ code: "agent-node" as const, message })));
     }
     return { diagnostics, resolvedProfileIds, valid: diagnostics.length === 0 };
   }
@@ -155,11 +186,32 @@ export class WorkflowRunner {
     const taskIds = new Map<string, string>();
     const runId = randomUUID();
     const manifest: RunManifest = { runId, workflowId: request.workflow.id, createdAt: new Date().toISOString(), nodes: manifestNodes, pauses, status: "running" };
+    const agentWorkflow = isAgentWorkflow(request);
+    const toolkit = agentWorkflow ? new AgentWorkflowToolkitAdapter(request.localConfiguration.agentWorkflow) : undefined;
+    const template = request.workflow.template;
+    const identity = agentWorkflow && template ? (request.agentWorkflowIdentity ?? await liveIdentity(request.projectPath, template.issueNumber)) : undefined;
+    const agentTerminalIds: string[] = [];
+    let agentWorktreeId: string | undefined;
+    if (agentWorkflow && identity && template) {
+      manifest.agentWorkflow = {
+        templateVersion: template.version,
+        identity,
+        resourceLease: { evidenceDirectory: join(request.projectPath, ".review"), terminalIds: agentTerminalIds },
+        evidence: { valid: false, reason: "Verifier evidence has not been evaluated.", path: join(request.projectPath, ".review", `ISSUE-${template.issueNumber}-VERIFY.json`) },
+      };
+    }
     const persist = () => writeRunManifest(request.projectPath, manifest);
     await persist();
     const finish = async (status: RunManifest["status"]): Promise<{ manifest: RunManifest; manifestPath: string }> => {
       manifest.status = status;
       delete manifest.activePause;
+      if (manifest.agentWorkflow && (status === "completed" || status === "terminated")) {
+        let evidenceArchived = false;
+        if (toolkit) { await toolkit.archive(manifest.agentWorkflow.resourceLease.evidenceDirectory); evidenceArchived = true; }
+        await Promise.all(agentTerminalIds.map((terminalId) => this.adapter.closeTerminal?.(terminalId)));
+        if (agentWorktreeId) await this.adapter.removeWorktree?.(agentWorktreeId);
+        manifest.agentWorkflow.cleanup = { completedAt: new Date().toISOString(), releasedResources: true, evidenceArchived };
+      }
       return { manifest, manifestPath: await persist() };
     };
     const dependencyTaskIds = (node: WorkflowNode): string[] => (node.dependsOn ?? []).filter((id) => taskIds.has(id)).map((id) => taskIds.get(id)!);
@@ -173,6 +225,20 @@ export class WorkflowRunner {
           dependsOn: dependencyTaskIds(node),
         });
         taskIds.set(node.id, task.taskId);
+        if (agentWorkflow && node.id === "release" && manifest.agentWorkflow && identity && template) {
+          const evidence = await verifierEvidence(request, template.issueNumber);
+          const result = validateVerificationEvidence(evidence.evidence, identity);
+          manifest.agentWorkflow.evidence = { ...result, path: evidence.path };
+          await persist();
+          if (!result.valid) {
+            const gate = await this.adapter.createDecisionGate(recoveryGate(task.taskId, node.id, result.reason ?? "Verifier evidence is invalid."));
+            manifest.activePause = { nodeId: node.id, kind: "failure", reason: result.reason ?? "Verifier evidence is invalid.", gateId: gate.gateId };
+            await persist();
+            const resolution = await this.adapter.waitForGateResolution({ gateId: gate.gateId });
+            pauses.push(pauseRecord(node.id, "failure", result.reason ?? "Verifier evidence is invalid.", gate.gateId, resolution));
+            return finish("terminated");
+          }
+        }
         const gate = await this.adapter.createDecisionGate(approvalGate(task.taskId, node.id, typeof node.prompt === "string" ? node.prompt : undefined));
         manifest.activePause = { nodeId: node.id, kind: "approval", reason: "Awaiting an Orca approval decision.", gateId: gate.gateId };
         await persist();
@@ -192,11 +258,15 @@ export class WorkflowRunner {
           : request.workflowConfiguration;
         const role = resolveNodeAgentProfile(node.id, nodeRoleId(node)!, request.portableConfiguration, configuration, request.localConfiguration);
         const prompt = promptFor(node, role.role.intent);
-        const command = commandFor(node, role.localProfile?.executablePath ?? role.localProvider.executablePath);
+        const command = agentWorkflow && toolkit
+          ? node.id === "implement" ? toolkit.command("dispatch-codex") : node.id === "verify" ? toolkit.command("verify") : commandFor(node, role.localProfile?.executablePath ?? role.localProvider.executablePath)
+          : commandFor(node, role.localProfile?.executablePath ?? role.localProvider.executablePath);
         const worktreeId = worktreeMode(node) === "isolated"
           ? (await this.adapter.prepareWorktree({ projectPath: request.projectPath, name: `${request.workflow.id}-${node.id}-${runId.slice(0, 8)}` })).worktreeId
           : undefined;
+        if (agentWorkflow && worktreeId) { agentWorktreeId = worktreeId; if (manifest.agentWorkflow) manifest.agentWorkflow.resourceLease.worktreeId = worktreeId; }
         const terminal = await this.adapter.createTerminal({ projectPath: request.projectPath, nodeId: node.id, command, ...(worktreeId ? { worktreeId } : {}) });
+        if (agentWorkflow) agentTerminalIds.push(terminal.terminalId);
         const task = await this.adapter.createTask({ workflowId: request.workflow.id, nodeId: node.id, prompt, dependsOn: dependencyTaskIds(node) });
         const input: DispatchInput = {
           structuredContext: structuredContext(node, nodes),

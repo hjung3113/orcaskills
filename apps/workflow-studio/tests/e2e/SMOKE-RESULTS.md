@@ -29,3 +29,9 @@ Visual authoring verification passed through the local Computer Use provider:
 - The Studio opened `/Users/hyojung/orca/projects/orcaskills` as a Git project, saved `.orca/workflows/new-workflow.yaml`, exposed `new-workflow` in the Workflows list, and reloaded it. The temporary saved workflow was removed after verification.
 
 Repeatable mocked end-to-end coverage completed successfully with `npm test -- --run tests/e2e/representative-workflows.test.ts`: 2 tests passed. `npm run typecheck` also passed after the visual verification.
+
+## Agent Workflow regression — 2026-07-15
+
+`npm --workspace @orca/workflow-studio run build`, `typecheck`, and the full Vitest suite completed successfully after adding the Agent Workflow template/profile. The suite contains 44 tests, including the fixed-template validation, documented-example validation, allowlisted local toolkit preflight, current-head verifier-evidence contract, release-gate authority, and resource-lease cleanup.
+
+`npm --workspace @orca/workflow-studio start` again launched an Electron window titled `Orca Workflow Studio` and stayed running without startup errors. The local Computer Use provider could list that window but did not expose its accessibility tree during this run because macOS accessibility permission needed re-enabling; no UI action was inferred from that unavailable tree. The manual checklist now includes the Agent Workflow creation surface.

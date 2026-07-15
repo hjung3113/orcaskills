@@ -15,6 +15,7 @@ Orca Workflow Studio is an Electron desktop editor for project-local, Git-tracke
 - Guides Agent-node configuration through Role → Profile → Model policy, with explicit preset application and review-before-save.
 - Previews and runs validated workflows through an Orca adapter, preserving a local run manifest.
 - Uses Orca Decision Gates for approvals and pauses failures/escalations for explicit retry, profile replacement, or termination choices.
+- Includes a first-class **Agent Workflow** template for ARCHITECT → contained CODEX → independent REVIEWER → independent VERIFIER → Release Captain decision, backed by a reviewed local runner profile and current-head evidence gate.
 
 Workflow Studio is an editor, validator, and preview surface. **Orca remains the source of truth for live task state, dispatches, approval records, and recovery decisions.**
 
@@ -47,6 +48,20 @@ For renderer development:
 ```bash
 npm run dev
 ```
+
+### WSL-friendly web development
+
+Avoid WSLg/Electron while iterating on the UI: run the local API and Vite in two WSL terminals, then open `http://localhost:5173` from a Windows browser.
+
+```bash
+# terminal 1
+npm --workspace @orca/workflow-studio run web:server
+
+# terminal 2
+npm --workspace @orca/workflow-studio run dev
+```
+
+Enter a WSL absolute Git-project path and choose **Open path**. The browser uses the same client contract as Electron but talks only to a loopback local API; it never receives filesystem or Orca CLI authority directly. See [web-first development](docs/web-first-development.md) for permitted-root configuration and Windows-native Electron verification.
 
 Run checks:
 
@@ -95,6 +110,12 @@ Profiles and presets remain portable in `.orca/workflow-config.yaml`; executable
 
 Conductor is an optional, read-only workflow advisor: it can prepare context, refine prompts, summarize handoffs, and advise escalation. It cannot edit code or manage Orca tasks, terminals, dispatches, or decision gates. See [the drill-down PRD](.scratch/workflow-studio-drilldown-configuration/prd.md) and [discovery ADR](docs/adr/0001-bounded-local-capability-discovery.md) for the full boundary.
 
+### Agent Workflow mode
+
+Choose **✦ Agent Workflow** from the workflow list to create the fixed visual multi-agent flow. The template requires distinct ARCHITECT, CODEX, REVIEWER, and VERIFIER roles; CODEX uses an isolated worktree and an allowlisted local toolkit dispatch. The runner accepts release readiness only from a current-head `VERIFIER` PASS artifact, then opens an Orca Decision Gate for the human Release Captain. It never auto-resolves the gate, merges, pushes, or releases.
+
+The template is portable; the toolkit root stays in the machine-local configuration. See the complete [Agent Workflow UI and setup example](docs/agent-workflow-example.md), [PRD](.scratch/agent-workflow-mode/prd.md), and [ADR](docs/adr/0002-agent-workflow-template-and-runner-profile.md).
+
 ## Running workflows from Orca
 
 The project-local [`orca-workflow`](.agents/skills/orca-workflow/SKILL.md) skill exposes the same command boundary to Codex and Claude terminals:
@@ -126,6 +147,7 @@ apps/workflow-studio/     Electron app, renderer, validation, and runner
   issues/                 Dependency-aware local implementation tickets
 docs/plans/               Product and delivery plan
 prototype/workflow-studio/ Throwaway UI exploration; not production code
+examples/agent-workflow/   Portable Agent Workflow example
 ```
 
 ## Verification status
@@ -133,17 +155,17 @@ prototype/workflow-studio/ Throwaway UI exploration; not production code
 The test suite covers workflow parsing and round trips, configuration resolution, the runner adapter boundary, approvals/failure pauses, parallel Worktree safety, command operations, and representative mock end-to-end workflows.
 
 ```text
-37 tests passing
+45 tests passing
 TypeScript typecheck passing
 Production build passing
-Electron startup smoke passing
+Electron startup uses the production CommonJS Electron entrypoint
 ```
 
 The Electron visual-authoring smoke is recorded in [the smoke-test results](apps/workflow-studio/tests/e2e/SMOKE-RESULTS.md). The drill-down implementation adds unit coverage for safe discovery, staged review, preset copying, and node-level profile resolution.
 
 ## Roadmap
 
-See the [open issues](https://github.com/hjung3113/orcaskills/issues) and the local [implementation tickets](.scratch/orca-workflow-studio/issues/). Near-term work focuses on completing the visual smoke check; live runtime monitoring in Studio, loops, schedules, webhooks, automatic retries, and autonomous recovery are intentionally out of scope for the first release.
+See the [open issues](https://github.com/hjung3113/orcaskills/issues), the local [base implementation tickets](.scratch/orca-workflow-studio/issues/), and the [Agent Workflow tickets](.scratch/agent-workflow-mode/issues/). Live runtime monitoring in Studio, loops, schedules, webhooks, automatic retries, and autonomous recovery are intentionally out of scope for the first release.
 
 ## References
 

@@ -60,6 +60,26 @@ _Avoid_: live preset binding, implicit preset synchronization
 
 ### Workflow guidance
 
+**Agent Workflow template**:
+A first-class, parameterized Workflow Studio template that renders the fixed ARCHITECT -> CODEX -> REVIEWER -> VERIFIER -> Release Captain flow. It selects the Agent Workflow runner profile; it is not a generic preset or an independently executable runner.
+_Avoid_: agent-workflow preset, generic review workflow
+
+**Agent Workflow runner profile**:
+A reviewed execution contract selected only by the Agent Workflow template. It uses a machine-local toolkit adapter and keeps Orca authoritative for tasks, terminals, decision gates, and manifests.
+_Avoid_: portable shell command, generic runner mode
+
+**Verification evidence**:
+The canonical current-head `.review/ISSUE-<N>-VERIFY.json` artifact produced by the VERIFIER. A PASS artifact enables the Release Captain decision but never resolves, merges, pushes, or releases on their behalf.
+_Avoid_: test-passed prose, implementer verification
+
+**Release Captain**:
+The human who makes the final release decision after valid verification evidence is available. Neither the Conductor nor the runner may merge, push, or resolve that decision automatically.
+_Avoid_: automatic release, Conductor approval
+
+**Execution resource lease**:
+The runner-owned record of an Agent Workflow run's prepared worktree, visible role panes, and evidence directory. The runner reconciles or explicitly cleans these resources only after a release or abandonment decision.
+_Avoid_: agent-owned worktree, untracked pane
+
 **Conductor**:
 An optional workflow-level, read-only advisor configured with a profile. It may prepare context, refine prompts, summarize handoffs, and advise escalation, but cannot edit code or control tasks, dispatches, terminals, or decision gates.
 _Avoid_: orchestrating agent, execution controller
