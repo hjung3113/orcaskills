@@ -5,7 +5,9 @@ export type RecordedOrcaOperation =
   | { kind: "create-terminal"; input: { projectPath: string; nodeId: string; command: string; worktreeId?: string } }
   | { kind: "create-task"; input: { workflowId: string; nodeId: string; prompt: string; dependsOn: string[] } }
   | { kind: "dispatch"; input: { taskId: string; terminalId: string; prompt: string; input: DispatchInput } }
-  | { kind: "create-gate"; input: DecisionGateInput };
+  | { kind: "create-gate"; input: DecisionGateInput }
+  | { kind: "close-terminal"; terminalId: string }
+  | { kind: "remove-worktree"; worktreeId: string };
 
 /** Controlled adapter fake for runner integration tests. */
 export class RecordingOrcaCliAdapter implements OrcaCliAdapter {
@@ -56,4 +58,6 @@ export class RecordingOrcaCliAdapter implements OrcaCliAdapter {
     return this.gateResolutions.shift() ?? { action: "approved" };
   }
   async listDecisionGates(): Promise<DecisionGateStatus[]> { return [...this.gateStatuses]; }
+  async closeTerminal(terminalId: string): Promise<void> { this.operations.push({ kind: "close-terminal", terminalId }); }
+  async removeWorktree(worktreeId: string): Promise<void> { this.operations.push({ kind: "remove-worktree", worktreeId }); }
 }

@@ -70,6 +70,18 @@ describe("WorkflowRunner approval and recovery pauses", () => {
     expect(result.manifest.pauses).toEqual([expect.objectContaining({ resolution: "replace-profile", profileId: "careful" })]);
   });
 
+  it("lets recovery replace a pre-existing node-level profile override", async () => {
+    const adapter = new RecordingOrcaCliAdapter();
+    adapter.queueTaskOutcome("work", { status: "failed", reason: "Profile exhausted." });
+    adapter.queueTaskOutcome("work", { status: "completed" });
+    adapter.queueGateResolution({ action: "replace-profile", profileId: "careful" });
+    const base = await localRequest([
+      { id: "start", type: "start" }, { id: "work", type: "agent", roleId: "worker", dependsOn: ["start"] }, { id: "end", type: "end", dependsOn: ["work"] },
+    ]);
+    const result = await new WorkflowRunner(adapter).run({ ...base, workflow: { ...base.workflow, nodeProfileOverrides: { work: { profileId: "fast" } } } });
+    expect(result.manifest.nodes).toEqual([expect.objectContaining({ nodeId: "work", profileId: "careful" })]);
+  });
+
   it("terminates only the affected downstream path when an escalation is resolved as terminate", async () => {
     const adapter = new RecordingOrcaCliAdapter();
     adapter.queueTaskOutcome("first", { status: "escalated", reason: "Human decision needed." });

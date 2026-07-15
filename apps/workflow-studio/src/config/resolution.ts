@@ -1,5 +1,6 @@
 import type {
   AgentProfile,
+  ModelPolicy,
   PortableConfiguration,
   Role,
   WorkflowConfiguration,
@@ -9,9 +10,13 @@ import type { LocalConfiguration, LocalProfileConfiguration, LocalProviderConfig
 export type ConfigurationDiagnosticCode =
   | "duplicate-role"
   | "duplicate-profile"
+  | "duplicate-preset"
   | "missing-role-profile"
   | "missing-override-role"
   | "missing-override-profile"
+  | "missing-node-override-profile"
+  | "missing-preset-role"
+  | "missing-preset-profile"
   | "missing-local-provider"
   | "disabled-local-provider"
   | "disabled-local-profile"
@@ -27,7 +32,8 @@ export interface ResolvedAgentProfile {
   profile: AgentProfile;
   localProvider: LocalProviderConfiguration;
   localProfile?: LocalProfileConfiguration;
-  selectedBy: "role" | "workflow-override";
+  modelPolicy: ModelPolicy;
+  selectedBy: "role" | "workflow-override" | "node-override";
 }
 
 export class ConfigurationResolutionError extends Error {
@@ -46,6 +52,7 @@ function duplicateDiagnostics(configuration: PortableConfiguration): Configurati
   for (const [label, values, code] of [
     ["Role", configuration.roles, "duplicate-role"],
     ["Profile", configuration.profiles, "duplicate-profile"],
+    ["Preset", configuration.presets ?? [], "duplicate-preset"],
   ] as const) {
     const seen = new Set<string>();
     for (const value of values) {
@@ -79,6 +86,14 @@ export function validateConfiguration(
     if (!profiles.has(profileId)) diagnostics.push({ code: "missing-override-profile", message: `Profile override for \"${roleId}\" references missing profile \"${profileId}\".` });
     else selectedProfileIds.add(profileId);
   }
+  for (const [nodeId, override] of Object.entries(workflow.nodeProfileOverrides ?? {})) {
+    if (!profiles.has(override.profileId)) diagnostics.push({ code: "missing-node-override-profile", message: `Node override for "${nodeId}" references missing profile "${override.profileId}".` });
+    else selectedProfileIds.add(override.profileId);
+  }
+  for (const preset of portable.presets ?? []) {
+    if (!roles.has(preset.roleId)) diagnostics.push({ code: "missing-preset-role", message: `Preset "${preset.id}" references missing role "${preset.roleId}".` });
+    if (!profiles.has(preset.profileId)) diagnostics.push({ code: "missing-preset-profile", message: `Preset "${preset.id}" references missing profile "${preset.profileId}".` });
+  }
   if (workflow.conductor?.profileId) {
     if (!profiles.has(workflow.conductor.profileId)) {
       diagnostics.push({ code: "missing-conductor-profile", message: `Conductor references missing profile \"${workflow.conductor.profileId}\".` });
@@ -107,12 +122,24 @@ export function resolveAgentProfile(
   workflow: WorkflowConfiguration,
   local: LocalConfiguration,
 ): ResolvedAgentProfile {
+  return resolveNodeAgentProfile(undefined, roleId, portable, workflow, local);
+}
+
+/** Resolve the exact node configuration; node overrides are deliberate and highest precedence. */
+export function resolveNodeAgentProfile(
+  nodeId: string | undefined,
+  roleId: string,
+  portable: PortableConfiguration,
+  workflow: WorkflowConfiguration,
+  local: LocalConfiguration,
+): ResolvedAgentProfile {
   const diagnostics = validateConfiguration(portable, workflow, local);
   const roles = byId(portable.roles);
   const profiles = byId(portable.profiles);
   const role = roles.get(roleId);
   if (!role) diagnostics.push({ code: "missing-override-role", message: `Agent references missing role \"${roleId}\".` });
-  const profileId = workflow.profileOverrides?.[roleId] ?? role?.profileId;
+  const nodeOverride = nodeId ? workflow.nodeProfileOverrides?.[nodeId] : undefined;
+  const profileId = nodeOverride?.profileId ?? workflow.profileOverrides?.[roleId] ?? role?.profileId;
   const profile = profileId ? profiles.get(profileId) : undefined;
   if (!profile && profileId) diagnostics.push({ code: "missing-override-profile", message: `Role \"${roleId}\" resolves missing profile \"${profileId}\".` });
   if (diagnostics.length > 0 || !role || !profile) throw new ConfigurationResolutionError(diagnostics);
@@ -121,6 +148,7 @@ export function resolveAgentProfile(
     profile,
     localProvider: local.providers[profile.provider],
     ...(local.profiles?.[profile.id] ? { localProfile: local.profiles[profile.id] } : {}),
-    selectedBy: workflow.profileOverrides?.[roleId] ? "workflow-override" : "role",
+    modelPolicy: nodeOverride?.modelPolicy ?? profile.modelPolicy ?? (profile.model === "provider-default" ? { kind: "provider-default" } : { kind: "exact", modelId: profile.model }),
+    selectedBy: nodeOverride ? "node-override" : workflow.profileOverrides?.[roleId] ? "workflow-override" : "role",
   };
 }

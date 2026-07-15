@@ -1,8 +1,8 @@
 import { app, BrowserWindow, dialog, ipcMain } from "electron";
 import { join } from "node:path";
-import { isGitProject, listWorkflowFiles, readWorkflowFile, saveWorkflowFile } from "../src/shared/project";
-import { parseWorkflow } from "../src/shared/validation";
-import { CommandOrcaCliAdapter, WorkflowRunner, type WorkflowRunnerRequest } from "../src/runner";
+import { WorkflowStudioService } from "../src/service/workflow-studio-service";
+
+const service = new WorkflowStudioService();
 
 function createWindow(): void {
   const window = new BrowserWindow({
@@ -19,22 +19,17 @@ app.whenReady().then(() => {
   ipcMain.handle("project:select", async () => {
     const result = await dialog.showOpenDialog({ properties: ["openDirectory"] });
     if (result.canceled || !result.filePaths[0]) return undefined;
-    const path = result.filePaths[0];
-    if (!(await isGitProject(path))) throw new Error("Workflow Studio can only open a Git project.");
-    return path;
+    return service.openProject(result.filePaths[0]);
   });
-  ipcMain.handle("workflow:list", (_event, projectPath: string) => listWorkflowFiles(projectPath));
-  ipcMain.handle("workflow:read", (_event, path: string) => readWorkflowFile(path));
-  ipcMain.handle("workflow:validate", (_event, source: string) => parseWorkflow(source));
-  ipcMain.handle("workflow:save", async (_event, projectPath: string, source: string) => {
-    const parsed = parseWorkflow(source);
-    if (!parsed.workflow || parsed.diagnostics.length) throw new Error("Fix validation diagnostics before saving.");
-    return saveWorkflowFile(projectPath, parsed.workflow.id, source);
-  });
-  ipcMain.handle("workflow:preview", (_event, request: WorkflowRunnerRequest) =>
-    new WorkflowRunner(new CommandOrcaCliAdapter()).preview(request));
-  ipcMain.handle("workflow:run", (_event, request: WorkflowRunnerRequest) =>
-    new WorkflowRunner(new CommandOrcaCliAdapter()).run(request));
+  ipcMain.handle("workflow:list", (_event, projectPath: string) => service.listWorkflows(projectPath));
+  ipcMain.handle("workflow:read", (_event, path: string) => service.readWorkflow(path));
+  ipcMain.handle("workflow:validate", (_event, source: string) => service.validate(source));
+  ipcMain.handle("workflow:save", (_event, projectPath: string, source: string) => service.save(projectPath, source));
+  ipcMain.handle("workflow:preview", (_event, request) => service.preview(request));
+  ipcMain.handle("workflow:run", (_event, request) => service.run(request));
+  ipcMain.handle("capabilities:discover", () => service.discoverCapabilities());
+  ipcMain.handle("configuration:read-portable", (_event, projectPath: string) => service.readPortableConfiguration(projectPath));
+  ipcMain.handle("configuration:save-portable", (_event, projectPath: string, configuration) => service.savePortableConfiguration(projectPath, configuration));
   createWindow();
   app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });
