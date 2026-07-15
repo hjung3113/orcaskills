@@ -60,6 +60,26 @@ _Avoid_: live preset binding, implicit preset synchronization
 
 ### Workflow guidance
 
+**Run Readiness**:
+The explicit, point-in-time result of validating the current workflow draft against its project configuration, machine-local capabilities, and Orca availability. It is `ready`, `blocked`, or `unknown`; it is never inferred from a previously saved workflow or a background poll.
+_Avoid_: run status, continuous health check, implicit execution permission
+
+**Readiness blocker**:
+A specific failed Run Readiness requirement with a human-readable reason, a configuration scope, and a next action. A blocker explains why a run cannot be previewed or launched; it does not automatically modify portable or local configuration.
+_Avoid_: generic error, auto-remediation, hidden preflight failure
+
+**Execution preview**:
+A side-effect-free list of Orca operations that the runner would create after a ready preflight. It creates no task, terminal, worktree, manifest, or Decision Gate.
+_Avoid_: dry run with side effects, partial execution
+
+**Actionable blocker**:
+A Readiness blocker that retains the affected node identifier when one exists and offers one explicit corrective destination in Studio. Machine-wide blockers have no node destination and instead identify their local scope.
+_Avoid_: generic error list, inferred node match, automatic repair
+
+**Draft execution request**:
+The project path and portable workflow source submitted by the renderer for a preview or run. The service boundary parses it and assembles portable and machine-local configuration itself; the renderer never submits a raw runner request.
+_Avoid_: renderer-owned local configuration, raw runner request, credential-bearing IPC payload
+
 **Agent Workflow template**:
 A first-class, parameterized Workflow Studio template that renders the fixed ARCHITECT -> CODEX -> REVIEWER -> VERIFIER -> Release Captain flow. It selects the Agent Workflow runner profile; it is not a generic preset or an independently executable runner.
 _Avoid_: agent-workflow preset, generic review workflow

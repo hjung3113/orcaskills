@@ -1,7 +1,7 @@
 import type { CapabilityDiscovery } from "../config/discovery";
 import type { PortableConfiguration } from "../shared/config";
 import type { WorkflowDocument, WorkflowFile } from "../shared/workflow";
-import type { RunManifest, WorkflowPreview, WorkflowRunnerRequest } from "../runner";
+import type { RunManifest, WorkflowPreview } from "../runner";
 import type { WorkflowStudioClient } from "./types";
 
 async function request<T>(path: string, body?: unknown): Promise<T> {
@@ -27,8 +27,8 @@ export function createWebClient(): WorkflowStudioClient {
     readWorkflow: (path) => request<string>("/api/workflow/read", { path }),
     validate: (source) => request<WorkflowDocument>("/api/workflow/validate", { source }),
     save: (projectPath, source) => request<string>("/api/workflow/save", { projectPath, source }),
-    preview: (input) => request<WorkflowPreview>("/api/workflow/preview", input),
-    run: (input) => request<{ manifest: RunManifest; manifestPath: string }>("/api/workflow/run", input),
+    preview: (projectPath, source) => request<WorkflowPreview>("/api/workflow/preview", { projectPath, source }),
+    run: (projectPath, source) => request<{ manifest: RunManifest; manifestPath: string }>("/api/workflow/run", { projectPath, source }),
     discoverCapabilities: () => request<CapabilityDiscovery>("/api/capabilities/discover", {}),
     readPortableConfiguration: (projectPath) => request<PortableConfiguration>(`/api/configuration/portable?projectPath=${encodeURIComponent(projectPath)}`),
     savePortableConfiguration: (projectPath, configuration) => request<string>("/api/configuration/portable/save", { projectPath, configuration }),

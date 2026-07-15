@@ -37,7 +37,8 @@ afterEach(async () => Promise.all(directories.splice(0).map((directory) => rm(di
 
 describe("WorkflowRunner", () => {
   it("previews resolved sequential operations and only structured handoff context", async () => {
-    const runner = new WorkflowRunner(new RecordingOrcaCliAdapter());
+    const adapter = new RecordingOrcaCliAdapter();
+    const runner = new WorkflowRunner(adapter);
     const preview = await runner.preview(request);
     expect(preview.preflight).toMatchObject({ valid: true, resolvedProfileIds: { research: "fast", implement: "balanced" } });
     expect(preview.operations.map((operation) => `${operation.kind}:${operation.nodeId}`)).toEqual([
@@ -51,6 +52,7 @@ describe("WorkflowRunner", () => {
       },
     });
     expect(JSON.stringify(preview.operations)).not.toContain("must-not-forward");
+    expect(adapter.operations).toEqual([]);
   });
 
   it("runs in dependency order through the adapter and writes a local ignored manifest", async () => {
