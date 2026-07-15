@@ -94,4 +94,14 @@ describe("WorkflowRunner", () => {
     });
     expect(preflight.diagnostics.map((diagnostic) => diagnostic.message)).toEqual(expect.arrayContaining([expect.stringContaining("Conductor references missing profile")]))
   });
+
+  it("uses a node profile override saved in workflow YAML", async () => {
+    const runner = new WorkflowRunner(new RecordingOrcaCliAdapter());
+    const preview = await runner.preview({
+      ...request,
+      workflow: { ...request.workflow, nodeProfileOverrides: { implement: { profileId: "fast" } } },
+      workflowConfiguration: {},
+    });
+    expect(preview.preflight.resolvedProfileIds).toMatchObject({ implement: "fast" });
+  });
 });

@@ -155,7 +155,7 @@ examples/agent-workflow/   Portable Agent Workflow example
 The test suite covers workflow parsing and round trips, configuration resolution, the runner adapter boundary, approvals/failure pauses, parallel Worktree safety, command operations, and representative mock end-to-end workflows.
 
 ```text
-45 tests passing
+48 tests passing
 TypeScript typecheck passing
 Production build passing
 Electron startup uses the production CommonJS Electron entrypoint

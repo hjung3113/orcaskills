@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { createReadOnlyConductor } from "../config/conductor";
 import { resolveNodeAgentProfile, validateConfiguration } from "../config/resolution";
+import type { WorkflowConfiguration } from "../shared/config";
 import { parseWorkflow, serializeWorkflow } from "../shared/validation";
 import type { WorkflowNode } from "../shared/workflow";
 import { writeRunManifest } from "./manifest";
@@ -112,6 +113,16 @@ function isAgentWorkflow(request: WorkflowRunnerRequest): boolean {
   return request.workflow.runnerProfile === "agent-workflow" && request.workflow.template?.id === "agent-workflow";
 }
 
+function resolvedWorkflowConfiguration(request: WorkflowRunnerRequest): WorkflowConfiguration {
+  return {
+    ...(Object.keys({ ...request.workflow.profileOverrides, ...request.workflowConfiguration.profileOverrides }).length
+      ? { profileOverrides: { ...request.workflow.profileOverrides, ...request.workflowConfiguration.profileOverrides } } : {}),
+    ...(Object.keys({ ...request.workflow.nodeProfileOverrides, ...request.workflowConfiguration.nodeProfileOverrides }).length
+      ? { nodeProfileOverrides: { ...request.workflow.nodeProfileOverrides, ...request.workflowConfiguration.nodeProfileOverrides } } : {}),
+    ...(request.workflowConfiguration.conductor ?? request.workflow.conductor ? { conductor: request.workflowConfiguration.conductor ?? request.workflow.conductor } : {}),
+  };
+}
+
 async function verifierEvidence(request: WorkflowRunnerRequest, issueNumber: number): Promise<{ evidence: import("./agent-workflow").VerificationEvidence | undefined; path: string }> {
   const path = join(request.projectPath, ".review", `ISSUE-${issueNumber}-VERIFY.json`);
   if (request.agentWorkflowEvidence) return { evidence: request.agentWorkflowEvidence, path };
@@ -123,10 +134,7 @@ export class WorkflowRunner {
   constructor(private readonly adapter: OrcaCliAdapter) {}
 
   async preflight(request: WorkflowRunnerRequest): Promise<PreflightResult> {
-    const workflowConfiguration = {
-      ...request.workflowConfiguration,
-      conductor: request.workflowConfiguration.conductor ?? request.workflow.conductor,
-    };
+    const workflowConfiguration = resolvedWorkflowConfiguration(request);
     const diagnostics: RunnerDiagnostic[] = [];
     const parsed = parseWorkflow(serializeWorkflow(request.workflow));
     diagnostics.push(...parsed.diagnostics.map((diagnostic) => ({ code: "workflow" as const, message: diagnostic.message })));
@@ -143,7 +151,7 @@ export class WorkflowRunner {
         diagnostics.push({ code: "agent-node", nodeId: node.id, message: `Agent node \"${node.id}\" needs a roleId.` });
         continue;
       }
-      try { resolvedProfileIds[node.id] = resolveNodeAgentProfile(node.id, roleId, request.portableConfiguration, request.workflowConfiguration, request.localConfiguration).profile.id; }
+      try { resolvedProfileIds[node.id] = resolveNodeAgentProfile(node.id, roleId, request.portableConfiguration, workflowConfiguration, request.localConfiguration).profile.id; }
       catch (error) { diagnostics.push({ code: "configuration", nodeId: node.id, message: error instanceof Error ? error.message : "Agent profile resolution failed." }); }
     }
     if (workflowConfiguration.conductor?.enabled) {
@@ -161,13 +169,14 @@ export class WorkflowRunner {
     const preflight = await this.preflight(request);
     if (!preflight.valid) return { preflight, operations: [] };
     const nodes = new Map(request.workflow.nodes.map((node) => [node.id, node]));
+    const workflowConfiguration = resolvedWorkflowConfiguration(request);
     const operations: PlannedOperation[] = [];
     for (const node of agentNodesInOrder(request)) {
       const profileId = preflight.resolvedProfileIds[node.id];
       const input: DispatchInput = {
         structuredContext: structuredContext(node, nodes),
         ...(inputMappings(node).length ? { inputMappings: inputMappings(node) } : {}),
-        ...(request.workflowConfiguration.conductor?.enabled && request.conductorHandoffSummary ? { conductorHandoffSummary: request.conductorHandoffSummary } : {}),
+        ...(workflowConfiguration.conductor?.enabled && request.conductorHandoffSummary ? { conductorHandoffSummary: request.conductorHandoffSummary } : {}),
       };
       if (worktreeMode(node) === "isolated") operations.push({ kind: "prepare-worktree", nodeId: node.id, profileId });
       operations.push({ kind: "create-terminal", nodeId: node.id, profileId });
@@ -181,6 +190,7 @@ export class WorkflowRunner {
     const preview = await this.preview(request);
     if (!preview.preflight.valid) throw new WorkflowPreflightError(preview.preflight);
     const nodes = new Map(request.workflow.nodes.map((node) => [node.id, node]));
+    const baseWorkflowConfiguration = resolvedWorkflowConfiguration(request);
     const manifestNodes: RunManifestNode[] = [];
     const pauses: RunManifest["pauses"] = [];
     const taskIds = new Map<string, string>();
@@ -254,8 +264,8 @@ export class WorkflowRunner {
       let replacementProfileId: string | undefined;
       for (;;) {
         const configuration = replacementProfileId
-          ? { ...request.workflowConfiguration, profileOverrides: { ...request.workflowConfiguration.profileOverrides, [nodeRoleId(node)!]: replacementProfileId } }
-          : request.workflowConfiguration;
+          ? { ...baseWorkflowConfiguration, nodeProfileOverrides: { ...baseWorkflowConfiguration.nodeProfileOverrides, [node.id]: { profileId: replacementProfileId } } }
+          : baseWorkflowConfiguration;
         const role = resolveNodeAgentProfile(node.id, nodeRoleId(node)!, request.portableConfiguration, configuration, request.localConfiguration);
         const prompt = promptFor(node, role.role.intent);
         const command = agentWorkflow && toolkit
@@ -271,7 +281,7 @@ export class WorkflowRunner {
         const input: DispatchInput = {
           structuredContext: structuredContext(node, nodes),
           ...(inputMappings(node).length ? { inputMappings: inputMappings(node) } : {}),
-          ...(request.workflowConfiguration.conductor?.enabled && request.conductorHandoffSummary ? { conductorHandoffSummary: request.conductorHandoffSummary } : {}),
+          ...(baseWorkflowConfiguration.conductor?.enabled && request.conductorHandoffSummary ? { conductorHandoffSummary: request.conductorHandoffSummary } : {}),
         };
         const dispatch = await this.adapter.dispatchTask({ taskId: task.taskId, terminalId: terminal.terminalId, prompt, input });
         const outcome = await this.adapter.waitForTaskOutcome({ taskId: task.taskId, dispatchId: dispatch.dispatchId });

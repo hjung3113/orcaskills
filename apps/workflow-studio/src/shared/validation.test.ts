@@ -54,4 +54,12 @@ describe("workflow validation", () => {
     const example = await readFile(fileURLToPath(new URL("../../../../examples/agent-workflow/.orca/workflows/agent-workflow.yaml", import.meta.url)), "utf8");
     expect(parseWorkflow(example).diagnostics).toEqual([]);
   });
+
+  it("preserves Conductor and node-level profile configuration from workflow YAML", () => {
+    const source = `${validWorkflow}conductor:\n  enabled: true\n  profileId: planner\nnodeProfileOverrides:\n  build:\n    profileId: careful\n    modelPolicy:\n      kind: exact\n      modelId: gpt-5\n`;
+    expect(parseWorkflow(source).workflow).toMatchObject({
+      conductor: { enabled: true, profileId: "planner" },
+      nodeProfileOverrides: { build: { profileId: "careful", modelPolicy: { kind: "exact", modelId: "gpt-5" } } },
+    });
+  });
 });

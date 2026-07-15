@@ -2,6 +2,7 @@ import { parseDocument, stringify } from "yaml";
 import type { Diagnostic, Workflow, WorkflowDocument, WorkflowNode } from "./workflow";
 import { nodeTypes } from "./workflow";
 import { validateAgentWorkflow } from "./agent-workflow";
+import type { NodeProfileOverride } from "./config";
 
 const nodeTypeSet = new Set<string>(nodeTypes);
 
@@ -22,6 +23,28 @@ function diagnostic(
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function parsedWorkflowConfiguration(value: Record<string, unknown>): Pick<Workflow, "conductor" | "profileOverrides" | "nodeProfileOverrides"> {
+  const profileOverrides = isRecord(value.profileOverrides)
+    ? Object.fromEntries(Object.entries(value.profileOverrides).filter((entry): entry is [string, string] => typeof entry[1] === "string"))
+    : undefined;
+  const nodeProfileOverrides = isRecord(value.nodeProfileOverrides)
+    ? Object.fromEntries(Object.entries(value.nodeProfileOverrides).flatMap(([nodeId, override]) => {
+      if (!isRecord(override) || typeof override.profileId !== "string") return [];
+      const modelPolicy = isRecord(override.modelPolicy) && (override.modelPolicy.kind === "provider-default" || (override.modelPolicy.kind === "exact" && typeof override.modelPolicy.modelId === "string"))
+        ? override.modelPolicy as NodeProfileOverride["modelPolicy"] : undefined;
+      return [[nodeId, { profileId: override.profileId, ...(modelPolicy ? { modelPolicy } : {}) }]];
+    }))
+    : undefined;
+  const conductor = isRecord(value.conductor) && typeof value.conductor.enabled === "boolean"
+    ? { enabled: value.conductor.enabled, ...(typeof value.conductor.profileId === "string" ? { profileId: value.conductor.profileId } : {}) }
+    : undefined;
+  return {
+    ...(profileOverrides && Object.keys(profileOverrides).length ? { profileOverrides } : {}),
+    ...(nodeProfileOverrides && Object.keys(nodeProfileOverrides).length ? { nodeProfileOverrides } : {}),
+    ...(conductor ? { conductor } : {}),
+  };
 }
 
 function validateGraph(workflow: Workflow, source: string): Diagnostic[] {
@@ -132,6 +155,7 @@ export function parseWorkflow(source: string): WorkflowDocument {
     ...(value.runnerProfile === "generic" || value.runnerProfile === "agent-workflow" ? { runnerProfile: value.runnerProfile } : {}),
     ...(isRecord(value.template) && value.template.id === "agent-workflow" && value.template.version === 1 && typeof value.template.issueNumber === "number"
       ? { template: { id: "agent-workflow", version: 1, issueNumber: value.template.issueNumber } } : {}),
+    ...parsedWorkflowConfiguration(value),
   };
   return { workflow, diagnostics: validateGraph(workflow, source) };
 }

@@ -19,11 +19,10 @@ export interface WorkflowNode {
   [key: string]: unknown;
 }
 
-export interface Workflow {
+export interface Workflow extends WorkflowConfiguration {
   id: string;
   name?: string;
   nodes: WorkflowNode[];
-  conductor?: ConductorConfiguration;
   runnerProfile?: RunnerProfile;
   template?: WorkflowTemplateReference;
 }
@@ -44,4 +43,4 @@ export interface WorkflowFile {
   id: string;
   path: string;
 }
-import type { ConductorConfiguration } from "./config";
+import type { WorkflowConfiguration } from "./config";
