@@ -18,13 +18,15 @@ import {
 } from "@xyflow/react";
 import type { Workflow, WorkflowDocument, WorkflowFile, WorkflowNode, WorkflowNodeType } from "../shared/workflow";
 import type { CapabilityDiscovery } from "../config/discovery";
-import type { PortableConfiguration } from "../shared/config";
-import { applyPortablePreset, reviewPortableConfiguration } from "../config/staging";
+import type { AgentProfile, PortableConfiguration, PortablePreset, PromptPreset, Role } from "../shared/config";
+import { applyPortablePreset, applyPromptPreset, planLegacyPromptMigration, planPromptPresetMutation, reviewPortableConfiguration } from "../config/staging";
+import { addAgentWorkflowRoleDrafts, addRoleProfileDraft, onboardingCandidates } from "../config/onboarding";
 import { nodeTypes } from "../shared/workflow";
 import { serializeWorkflow } from "../shared/validation";
 import { createAgentWorkflow } from "../shared/agent-workflow";
 import { workflowStudioClient } from "../client";
 import { blockerDestination, currentPreview, nodeReadiness, previewReadiness, staticReadiness, type CheckedPreview } from "./readiness";
+import { ConfigurationLibraryEditor, ConfigurationLibraryPanel, ConfigurationReviewPanel, librarySectionLabels, type LibraryEditorState, type LibrarySection } from "./configuration-library";
 import "@xyflow/react/dist/style.css";
 import "./styles.css";
 
@@ -39,7 +41,6 @@ nodes:
 `;
 
 type CanvasNode = Node<{ label: string; type: WorkflowNodeType; readiness?: "blocked" | "ready" }>;
-
 const typeLabels: Record<WorkflowNodeType, string> = {
   start: "Start",
   agent: "Agent",
@@ -89,6 +90,15 @@ function toList(value: unknown): string {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string").join(", ") : "";
 }
 
+function nextLibraryId(value: string, existing: Iterable<string>, fallback: string): string {
+  const base = (value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || fallback);
+  const ids = new Set(existing);
+  if (!ids.has(base)) return base;
+  let suffix = 2;
+  while (ids.has(`${base}-${suffix}`)) suffix += 1;
+  return `${base}-${suffix}`;
+}
+
 function Studio() {
   const [projectPath, setProjectPath] = useState<string>();
   const [webProjectPath, setWebProjectPath] = useState("");
@@ -97,11 +107,23 @@ function Studio() {
   const [document, setDocument] = useState<WorkflowDocument>({ diagnostics: [] });
   const [message, setMessage] = useState("Open a Git project to begin.");
   const [outlineOpen, setOutlineOpen] = useState(true);
+  const [activeSurface, setActiveSurface] = useState<"workflow" | "library">("workflow");
+  const [librarySection, setLibrarySection] = useState<LibrarySection>("roles");
+  const [selectedLibraryId, setSelectedLibraryId] = useState<string>();
+  const [libraryName, setLibraryName] = useState("");
+  const [libraryIntent, setLibraryIntent] = useState("");
+  const [libraryProfileId, setLibraryProfileId] = useState("");
+  const [libraryCandidateKey, setLibraryCandidateKey] = useState("");
+  const [libraryInstructions, setLibraryInstructions] = useState("");
   const [selectedId, setSelectedId] = useState<string>();
   const [portableConfiguration, setPortableConfiguration] = useState<PortableConfiguration>({ roles: [], profiles: [], presets: [] });
   const [savedPortableConfiguration, setSavedPortableConfiguration] = useState<PortableConfiguration>({ roles: [], profiles: [], presets: [] });
   const [showConfigurationReview, setShowConfigurationReview] = useState(false);
   const [capabilities, setCapabilities] = useState<CapabilityDiscovery>();
+  const [onboardingRoleName, setOnboardingRoleName] = useState("");
+  const [onboardingIntent, setOnboardingIntent] = useState("");
+  const [onboardingProfileName, setOnboardingProfileName] = useState("Default profile");
+  const [onboardingCandidateKey, setOnboardingCandidateKey] = useState("");
   const [checkedPreview, setCheckedPreview] = useState<CheckedPreview>();
   const [checkingReadiness, setCheckingReadiness] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
@@ -131,14 +153,22 @@ function Studio() {
   const selectedProfileId = selectedNodeOverride?.profileId ?? selectedRole?.profileId;
   const selectedProfile = portableConfiguration.profiles.find((profile) => profile.id === selectedProfileId);
   const selectedCapability = capabilities?.providers.find((provider) => provider.providerId === selectedProfile?.provider);
-  const configurationReview = reviewPortableConfiguration(savedPortableConfiguration, portableConfiguration);
+  const availableOnboardingCandidates = onboardingCandidates(capabilities);
+  const onboardingCandidate = availableOnboardingCandidates.find((candidate) => `${candidate.providerId}:${candidate.modelId}` === onboardingCandidateKey) ?? availableOnboardingCandidates[0];
+  const configurationReview = reviewPortableConfiguration(savedPortableConfiguration, portableConfiguration, { workflow: document.workflow, nodes: document.workflow?.nodes });
   const preview = currentPreview(checkedPreview, projectPath, source, configurationRevision);
   const readiness = !projectPath
     ? { state: "unknown" as const, blockers: [] }
     : staticReadiness(document.diagnostics) ?? previewReadiness(preview, document.workflow?.nodes.map((node) => node.id));
 
   async function refreshCapabilities() {
-    try { setCapabilities(await workflowStudioClient.discoverCapabilities()); setMessage("Local capabilities refreshed."); }
+    try {
+      const next = await workflowStudioClient.discoverCapabilities();
+      setCapabilities(next);
+      const first = onboardingCandidates(next)[0];
+      if (first) setOnboardingCandidateKey((current) => current || `${first.providerId}:${first.modelId}`);
+      setMessage("Local capabilities refreshed.");
+    }
     catch { setMessage("Could not refresh local capabilities."); }
   }
 
@@ -260,6 +290,138 @@ function Studio() {
     setShowConfigurationReview(false);
   }
 
+  function applyPromptPresetToSelectedNode(presetId: string) {
+    if (!presetId || !document.workflow || !selectedNode || selectedNode.type !== "agent") return;
+    const preset = portableConfiguration.promptPresets?.find((candidate) => candidate.id === presetId);
+    if (!preset) return;
+    commit({ ...document.workflow, nodes: document.workflow.nodes.map((node) => node.id === selectedNode.id ? applyPromptPreset(node, preset) : node) });
+    setMessage(`Copied prompt preset ${preset.id} into this node's additional instructions.`);
+  }
+
+  function migrateSelectedLegacyPrompt() {
+    if (!document.workflow || !selectedNode || selectedNode.type !== "agent") return;
+    const migration = planLegacyPromptMigration(selectedNode);
+    if (migration.status !== "ready") {
+      if (migration.status === "conflict") setMessage(migration.message);
+      return;
+    }
+    commit({ ...document.workflow, nodes: document.workflow.nodes.map((node) => node.id === selectedNode.id ? migration.node : node) });
+    setMessage("Legacy prompt migrated in this unsaved workflow draft. Save workflow to persist it.");
+  }
+
+  function addOnboardingDraft() {
+    if (!onboardingCandidate) { setMessage("Refresh capabilities and choose an available local candidate first."); return; }
+    try {
+      const next = addRoleProfileDraft(portableConfiguration, {
+        roleName: onboardingRoleName || (typeof selectedNode?.roleId === "string" ? selectedNode.roleId : "agent"),
+        intent: onboardingIntent,
+        profileName: onboardingProfileName,
+        candidate: onboardingCandidate,
+      });
+      setPortableConfiguration(next);
+      setOnboardingRoleName("");
+      setOnboardingIntent("");
+      setShowConfigurationReview(false);
+      setMessage("Role and profile added as an unsaved draft. Review before saving.");
+    } catch (error) { setMessage(error instanceof Error ? error.message : "Could not create configuration draft."); }
+  }
+
+  const libraryItems = librarySection === "roles" ? portableConfiguration.roles : librarySection === "profiles" ? portableConfiguration.profiles : librarySection === "presets" ? portableConfiguration.presets ?? [] : portableConfiguration.promptPresets ?? [];
+  const selectedLibraryItem = libraryItems.find((item) => item.id === selectedLibraryId);
+  const matchingLibraryCandidate = availableOnboardingCandidates.find((candidate) => `${candidate.providerId}:${candidate.modelId}` === libraryCandidateKey);
+  const libraryCandidate = matchingLibraryCandidate ?? (selectedLibraryId ? undefined : availableOnboardingCandidates[0]);
+  const selectedProfileUnavailable = librarySection === "profiles" && Boolean(selectedLibraryItem) && !matchingLibraryCandidate;
+
+  function resetLibraryEditor() {
+    setSelectedLibraryId(undefined);
+    setLibraryName(""); setLibraryIntent(""); setLibraryProfileId(""); setLibraryCandidateKey(""); setLibraryInstructions("");
+  }
+
+  function updateLibraryEditor(next: Partial<LibraryEditorState>) {
+    if (next.name !== undefined) setLibraryName(next.name);
+    if (next.intent !== undefined) setLibraryIntent(next.intent);
+    if (next.profileId !== undefined) setLibraryProfileId(next.profileId);
+    if (next.candidateKey !== undefined) setLibraryCandidateKey(next.candidateKey);
+    if (next.instructions !== undefined) setLibraryInstructions(next.instructions);
+  }
+
+  function openLibrary(section: LibrarySection = "roles") {
+    setActiveSurface("library");
+    setLibrarySection(section);
+    resetLibraryEditor();
+  }
+
+  function selectLibraryItem(id: string) {
+    const item = libraryItems.find((candidate) => candidate.id === id);
+    if (!item) return;
+    setSelectedLibraryId(id);
+    setLibraryName(item.id);
+    if (librarySection === "roles") { const role = item as Role; setLibraryIntent(role.intent); setLibraryProfileId(role.profileId); }
+    if (librarySection === "profiles") { const profile = item as AgentProfile; setLibraryCandidateKey(`${profile.provider}:${profile.model}`); }
+    if (librarySection === "presets") { const preset = item as PortablePreset; setLibraryProfileId(preset.profileId); setLibraryIntent(preset.roleId); }
+    if (librarySection === "prompt-presets") setLibraryInstructions((item as PromptPreset).instructions);
+  }
+
+  function stageLibrary(next: PortableConfiguration, message: string) {
+    setPortableConfiguration(next); setShowConfigurationReview(false); setMessage(message);
+  }
+
+  function saveLibraryItem() {
+    try {
+      if (librarySection === "roles") {
+        if (!libraryIntent.trim() || !libraryProfileId) throw new Error("A role needs intent and a profile.");
+        const id = selectedLibraryId ?? nextLibraryId(libraryName, portableConfiguration.roles.map((role) => role.id), "role");
+        const role: Role = { id, intent: libraryIntent.trim(), profileId: libraryProfileId };
+        stageLibrary({ ...portableConfiguration, roles: selectedLibraryId ? portableConfiguration.roles.map((value) => value.id === selectedLibraryId ? role : value) : [...portableConfiguration.roles, role] }, `Staged role ${id}. Review before saving.`);
+      } else if (librarySection === "profiles") {
+        if (!libraryCandidate) throw new Error("Refresh capabilities and choose an available candidate.");
+        const id = selectedLibraryId ?? nextLibraryId(libraryName, portableConfiguration.profiles.map((profile) => profile.id), "profile");
+        const profile: AgentProfile = { id, provider: libraryCandidate.providerId, model: libraryCandidate.modelId, modelPolicy: libraryCandidate.modelId === "provider-default" ? { kind: "provider-default" } : { kind: "exact", modelId: libraryCandidate.modelId } };
+        stageLibrary({ ...portableConfiguration, profiles: selectedLibraryId ? portableConfiguration.profiles.map((value) => value.id === selectedLibraryId ? profile : value) : [...portableConfiguration.profiles, profile] }, `Staged profile ${id}. Review before saving.`);
+      } else if (librarySection === "presets") {
+        if (!libraryIntent || !libraryProfileId) throw new Error("A configuration preset needs role and profile references.");
+        const id = selectedLibraryId ?? nextLibraryId(libraryName, (portableConfiguration.presets ?? []).map((preset) => preset.id), "preset");
+        const preset: PortablePreset = { id, roleId: libraryIntent, profileId: libraryProfileId };
+        stageLibrary({ ...portableConfiguration, presets: selectedLibraryId ? (portableConfiguration.presets ?? []).map((value) => value.id === selectedLibraryId ? preset : value) : [...(portableConfiguration.presets ?? []), preset] }, `Staged preset ${id}. Review before saving.`);
+      } else {
+        if (!libraryInstructions.trim()) throw new Error("A prompt preset needs instructions.");
+        const id = selectedLibraryId ?? nextLibraryId(libraryName, (portableConfiguration.promptPresets ?? []).map((preset) => preset.id), "prompt-preset");
+        stageLibrary(planPromptPresetMutation(portableConfiguration, selectedLibraryId ? { kind: "edit", id: selectedLibraryId, preset: { id, instructions: libraryInstructions.trim() } } : { kind: "add", preset: { id, instructions: libraryInstructions.trim() } }), `Staged prompt preset ${id}. Review before saving.`);
+      }
+      resetLibraryEditor();
+    } catch (error) { setMessage(error instanceof Error ? error.message : "Could not stage Library change."); }
+  }
+
+  function duplicateLibraryItem() {
+    if (!selectedLibraryItem) return;
+    const duplicateId = nextLibraryId(`${selectedLibraryItem.id}-copy`, libraryItems.map((item) => item.id), "copy");
+    if (librarySection === "roles") stageLibrary({ ...portableConfiguration, roles: [...portableConfiguration.roles, { ...(selectedLibraryItem as Role), id: duplicateId }] }, `Staged role ${duplicateId}.`);
+    else if (librarySection === "profiles") stageLibrary({ ...portableConfiguration, profiles: [...portableConfiguration.profiles, { ...(selectedLibraryItem as AgentProfile), id: duplicateId }] }, `Staged profile ${duplicateId}.`);
+    else if (librarySection === "presets") stageLibrary({ ...portableConfiguration, presets: [...(portableConfiguration.presets ?? []), { ...(selectedLibraryItem as PortablePreset), id: duplicateId }] }, `Staged preset ${duplicateId}.`);
+    else stageLibrary(planPromptPresetMutation(portableConfiguration, { kind: "duplicate", id: selectedLibraryItem.id, duplicateId }), `Staged prompt preset ${duplicateId}.`);
+  }
+
+  function deleteLibraryItem() {
+    if (!selectedLibraryItem) return;
+    let next: PortableConfiguration;
+    if (librarySection === "roles") next = { ...portableConfiguration, roles: portableConfiguration.roles.filter((role) => role.id !== selectedLibraryItem.id) };
+    else if (librarySection === "profiles") next = { ...portableConfiguration, profiles: portableConfiguration.profiles.filter((profile) => profile.id !== selectedLibraryItem.id) };
+    else if (librarySection === "presets") next = { ...portableConfiguration, presets: (portableConfiguration.presets ?? []).filter((preset) => preset.id !== selectedLibraryItem.id) };
+    else next = planPromptPresetMutation(portableConfiguration, { kind: "delete", id: selectedLibraryItem.id });
+    const review = reviewPortableConfiguration(savedPortableConfiguration, next, { workflow: document.workflow, nodes: document.workflow?.nodes });
+    if (review.blockedRemovals.length) { setMessage(review.blockedRemovals.map((item) => item.message).join(" ")); return; }
+    stageLibrary(next, `Staged removal of ${selectedLibraryItem.id}. Review before saving.`); setSelectedLibraryId(undefined);
+  }
+
+  function addAgentWorkflowOnboardingDrafts() {
+    if (!onboardingCandidate) { setMessage("Refresh capabilities and choose an available local candidate first."); return; }
+    try {
+      setPortableConfiguration(addAgentWorkflowRoleDrafts(portableConfiguration, onboardingProfileName, onboardingCandidate));
+      setShowConfigurationReview(false);
+      setMessage("Agent Workflow role drafts added. Review before saving.");
+    } catch (error) { setMessage(error instanceof Error ? error.message : "Could not create Agent Workflow drafts."); }
+  }
+
   return <main className="studio-shell">
     <header className="studio-header"><div className="header-title"><span className="eyebrow">WORKFLOW /</span><strong>{document.workflow?.name ?? "New workflow"}</strong><small>{message}</small></div><div className="header-actions"><span className={document.diagnostics.length ? "status invalid" : "status"}>{document.diagnostics.length ? "Needs attention" : "Valid"}</span><button className="quiet-action" onClick={refreshCapabilities}>Refresh capabilities</button>{workflowStudioClient.kind === "web" && <input className="web-project-path" aria-label="Web project path" value={webProjectPath} onChange={(event) => setWebProjectPath(event.target.value)} placeholder="/absolute/path/to/project" />}<button className="quiet-action" onClick={openProject}>{workflowStudioClient.kind === "web" ? "Open path" : "Open project"}</button><button className="quiet-action" disabled={!projectPath || checkingReadiness} onClick={() => void checkReadiness()}>{checkingReadiness ? "Checking…" : "Check readiness"}</button><button className="save-action" disabled={!projectPath || document.diagnostics.length > 0} onClick={saveWorkflow}>Save workflow</button></div></header>
     <section className={`studio-layout ${outlineOpen ? "outline-open" : "outline-collapsed"}`}>
@@ -267,28 +429,33 @@ function Studio() {
         <div className="studio-brand"><span>✦</span><strong>Workflow Studio</strong></div>
         <button className="project-switch" onClick={openProject}><i />{projectPath ? projectPath.split("/").pop() : "Select Git project"}<b>›</b></button>
         <div className="panel-heading"><h2>Workflows</h2><button aria-label="Collapse steps outline" className="icon-button" onClick={() => setOutlineOpen(false)}>‹</button></div>
-        <button className="new-workflow" onClick={() => { setSource(starterWorkflow); setMessage("New workflow"); }}>+ New workflow</button>
-        <button className="new-workflow" onClick={() => { commit(createAgentWorkflow()); setMessage("Agent Workflow template created. Configure its four role profiles before running."); }}>✦ Agent Workflow</button>
+        <button className="new-workflow" onClick={() => { setActiveSurface("workflow"); setSource(starterWorkflow); setMessage("New workflow"); }}>+ New workflow</button>
+        <button className="new-workflow" onClick={() => { setActiveSurface("workflow"); commit(createAgentWorkflow()); setMessage("Agent Workflow template created. Configure its four role profiles before running."); }}>✦ Agent Workflow</button>
+        <button className={`new-workflow ${activeSurface === "library" ? "active" : ""}`} onClick={() => openLibrary()}>▦ Configuration Library</button>
         {workflows.map((workflow) => <button className="workflow" key={workflow.path} onClick={() => loadWorkflow(workflow)}>{workflow.id}</button>)}
         <div className="steps-heading"><h2>Steps</h2><span>{document.workflow?.nodes.length ?? 0}</span></div>
         <nav>{document.workflow?.nodes.map((node) => <button className={`outline-step ${node.id === selectedId ? "active" : ""}`} key={node.id} onClick={() => selectNode(node.id)}><span>{typeLabels[node.type]}</span>{displayName(node)}</button>)}</nav>
       </aside>
       {!outlineOpen && <button className="outline-reopen" aria-label="Expand steps outline" onClick={() => setOutlineOpen(true)}>›</button>}
-      <section className="canvas-panel" aria-label="Workflow canvas">
+      {activeSurface === "workflow" ? <section className="canvas-panel" aria-label="Workflow canvas">
         <div className="canvas-toolbar" role="toolbar" aria-label="Add workflow node"><span>Add step</span>{nodeTypes.map((type) => <button key={type} onClick={() => addNode(type)}>+ {typeLabels[type]}</button>)}<button disabled={!selectedId} className="danger" onClick={removeSelected}>Remove</button></div>
         <ReactFlow nodes={canvasNodes.map((node) => ({ ...node, selected: node.id === selectedId, data: { ...node.data, ...(nodeReadiness(node.id, node.data.type, readiness) ? { readiness: nodeReadiness(node.id, node.data.type, readiness) } : {}) } }))} edges={edges} nodeTypes={canvasNodeTypes} onNodesChange={onNodesChange} onNodeClick={(_event, node) => selectNode(node.id)} onConnect={connect} onEdgeClick={(_event, edge) => removeEdge(edge)} fitView deleteKeyCode={null}>
           <Background gap={18} size={1} /><Controls /><MiniMap pannable zoomable />
         </ReactFlow>
-      </section>
+      </section> : <ConfigurationLibraryPanel section={librarySection} configuration={portableConfiguration} capabilities={capabilities} workflowNodes={document.workflow?.nodes} selectedId={selectedLibraryId} onNew={() => resetLibraryEditor()} onSelect={selectLibraryItem} onSection={openLibrary} />}
       <aside className="inspector" aria-label="Node inspector">
-        <div className="inspector-heading"><div><span className="eyebrow">SELECTED STEP</span><h2>Inspector</h2></div><span className="inspector-badge">{selectedNode ? typeLabels[selectedNode.type] : "—"}</span></div>
-        <section className={`run-readiness ${readiness.state}`} aria-live="polite"><div className="readiness-heading"><div><span className="eyebrow">RUN READINESS</span><strong>{readiness.state === "ready" ? "Ready to preview" : readiness.state === "blocked" ? "Blocked" : "Not checked"}</strong></div><span>{readiness.state}</span></div>{readiness.state === "unknown" && <p>Check this exact draft against its local profiles, toolkit, and Orca availability.</p>}{readiness.blockers.map((blocker, index) => <div className="readiness-blocker" key={`${blocker.message}-${index}`}><strong>{blocker.scope}</strong><p>{blocker.message}</p><small>{blocker.nextAction}</small>{blockerDestination(blocker, document.workflow?.nodes.map((node) => node.id) ?? []) && <button className="blocker-link" onClick={() => selectNode(blockerDestination(blocker, document.workflow?.nodes.map((node) => node.id) ?? [])!)}>Go to {blocker.nodeId}</button>}</div>)}<div className="readiness-actions"><button className="quiet-action" disabled={!projectPath || checkingReadiness} onClick={() => void checkReadiness()}>{checkingReadiness ? "Checking…" : "Check readiness"}</button><button className="preview-action" disabled={readiness.state !== "ready"} onClick={() => setShowPreview((open) => !open)}>{showPreview ? "Hide preview" : "Preview execution"}</button></div>{showPreview && preview && <ol className="operation-preview">{preview.operations.length ? preview.operations.map((operation, index) => <li key={`${operation.kind}-${operation.nodeId}-${index}`}><strong>{operation.kind}</strong><span>{operation.nodeId}{operation.profileId ? ` · ${operation.profileId}` : ""}</span></li>) : <li>No Orca operations are planned.</li>}</ol>}<small className="preview-boundary">Preview creates no Orca task, terminal, worktree, manifest, or Decision Gate.</small></section>
+        <div className="inspector-heading"><div><span className="eyebrow">{activeSurface === "library" ? "CONFIGURATION LIBRARY" : "SELECTED STEP"}</span><h2>Inspector</h2></div><span className="inspector-badge">{activeSurface === "library" ? librarySectionLabels[librarySection] : selectedNode ? typeLabels[selectedNode.type] : "—"}</span></div>
+        {activeSurface === "library" && <ConfigurationLibraryEditor section={librarySection} configuration={portableConfiguration} candidates={availableOnboardingCandidates} state={{ selectedId: selectedLibraryId, name: libraryName, intent: libraryIntent, profileId: libraryProfileId, candidateKey: libraryCandidateKey, instructions: libraryInstructions }} onChange={updateLibraryEditor} onSave={saveLibraryItem} onDuplicate={duplicateLibraryItem} onDelete={deleteLibraryItem} />}
+        {activeSurface === "library" && <ConfigurationReviewPanel review={configurationReview} canSave={Boolean(projectPath && configurationReview.hasChanges)} reviewing={showConfigurationReview} onReviewOrSave={() => showConfigurationReview ? void savePortableConfiguration() : setShowConfigurationReview(true)} />}
+        {activeSurface === "workflow" && <><section className={`run-readiness ${readiness.state}`} aria-live="polite"><div className="readiness-heading"><div><span className="eyebrow">RUN READINESS</span><strong>{readiness.state === "ready" ? "Ready to preview" : readiness.state === "blocked" ? "Blocked" : "Not checked"}</strong></div><span>{readiness.state}</span></div>{readiness.state === "unknown" && <p>Check this exact draft against its local profiles, toolkit, and Orca availability.</p>}{readiness.blockers.map((blocker, index) => <div className="readiness-blocker" key={`${blocker.message}-${index}`}><strong>{blocker.scope}</strong><p>{blocker.message}</p><small>{blocker.nextAction}</small>{blockerDestination(blocker, document.workflow?.nodes.map((node) => node.id) ?? []) && <button className="blocker-link" onClick={() => selectNode(blockerDestination(blocker, document.workflow?.nodes.map((node) => node.id) ?? [])!)}>Go to {blocker.nodeId}</button>}</div>)}<div className="readiness-actions"><button className="quiet-action" disabled={!projectPath || checkingReadiness} onClick={() => void checkReadiness()}>{checkingReadiness ? "Checking…" : "Check readiness"}</button><button className="preview-action" disabled={readiness.state !== "ready"} onClick={() => setShowPreview((open) => !open)}>{showPreview ? "Hide preview" : "Preview execution"}</button></div>{showPreview && preview && <ol className="operation-preview">{preview.operations.length ? preview.operations.map((operation, index) => <li key={`${operation.kind}-${operation.nodeId}-${index}`}><strong>{operation.kind}</strong><span>{operation.nodeId}{operation.profileId ? ` · ${operation.profileId}` : ""}</span></li>) : <li>No Orca operations are planned.</li>}</ol>}<small className="preview-boundary">Preview creates no Orca task, terminal, worktree, manifest, or Decision Gate.</small></section>
         {document.workflow?.runnerProfile === "agent-workflow" && <section className="conductor-configuration"><span className="eyebrow">AGENT WORKFLOW MODE</span><p>ARCHITECT → sandboxed CODEX → independent REVIEWER → independent VERIFIER → Release Captain. CODEX uses an isolated worktree; a current-head VERIFIER PASS artifact enables, but never resolves, the human release decision.</p></section>}
         {selectedNode ? <div className="inspector-form">
           <p className="node-id">{typeLabels[selectedNode.type]} · {selectedNode.id}</p>
-          {selectedNode.type === "agent" && <section className="agent-configuration"><span className="eyebrow">GUIDED CONFIGURATION</span><label>Role<select aria-label="Agent role" value={selectedRoleId} onChange={(event) => editSelected("roleId", event.target.value)}><option value="">Select a role</option>{portableConfiguration.roles.map((role) => <option key={role.id} value={role.id}>{role.id} — {role.intent}</option>)}</select></label><label>Profile override<select aria-label="Agent profile" value={selectedProfileId ?? ""} disabled={!selectedRole} onChange={(event) => selectNodeProfile(event.target.value)}><option value="">Use role profile ({selectedRole?.profileId ?? "none"})</option>{portableConfiguration.profiles.map((profile) => { const capability = capabilities?.providers.find((provider) => provider.providerId === profile.provider); return <option key={profile.id} value={profile.id} disabled={capability?.availability === "unavailable"}>{profile.id} · {profile.provider} / {profile.model}{capability?.availability === "unavailable" ? " — unavailable" : ""}</option>; })}</select></label><label>Apply preset<select aria-label="Configuration preset" defaultValue="" onChange={(event) => applyPresetToSelectedNode(event.target.value)}><option value="">Choose a preset</option>{(portableConfiguration.presets ?? []).map((preset) => <option key={preset.id} value={preset.id}>{preset.id}</option>)}</select></label><p className="capability-status">{selectedCapability ? `${selectedCapability.displayName}: ${selectedCapability.diagnostic ?? selectedCapability.availability}` : "Select a profile to check local availability."}</p>{showConfigurationReview && <p className="capability-status">Review: {configurationReview.hasChanges ? `roles ${configurationReview.changedRoles.join(", ") || "—"}; profiles ${configurationReview.changedProfiles.join(", ") || "—"}; presets ${configurationReview.changedPresets.join(", ") || "—"}` : "No portable configuration changes."}</p>}<button className="quiet-action" disabled={!projectPath || !configurationReview.hasChanges} onClick={() => showConfigurationReview ? void savePortableConfiguration() : setShowConfigurationReview(true)}>{showConfigurationReview ? "Confirm save" : "Review configuration"}</button></section>}
+          {selectedNode.type === "agent" && <section className="agent-configuration"><span className="eyebrow">GUIDED CONFIGURATION</span>
+            {!portableConfiguration.roles.length && <section className="first-run-onboarding"><strong>Set up your first portable role</strong><p>Create a semantic role and profile from a currently available local candidate. Nothing is written until you review and confirm.</p><label>Role name<input aria-label="New role name" value={onboardingRoleName} placeholder={typeof selectedNode.roleId === "string" ? selectedNode.roleId : "Implementation lead"} onChange={(event) => setOnboardingRoleName(event.target.value)} /></label><label>Role intent<textarea aria-label="New role intent" value={onboardingIntent} placeholder="What this role is responsible for" onChange={(event) => setOnboardingIntent(event.target.value)} /></label><label>Profile name<input aria-label="New profile name" value={onboardingProfileName} onChange={(event) => setOnboardingProfileName(event.target.value)} /></label><label>Local candidate<select aria-label="Discovered local candidate" value={onboardingCandidate ? `${onboardingCandidate.providerId}:${onboardingCandidate.modelId}` : ""} disabled={!availableOnboardingCandidates.length} onChange={(event) => setOnboardingCandidateKey(event.target.value)}><option value="">{availableOnboardingCandidates.length ? "Choose a candidate" : "Refresh capabilities first"}</option>{availableOnboardingCandidates.map((candidate) => <option key={`${candidate.providerId}:${candidate.modelId}`} value={`${candidate.providerId}:${candidate.modelId}`}>{candidate.providerLabel} / {candidate.modelLabel}</option>)}</select></label><button className="quiet-action" disabled={!projectPath || !onboardingCandidate} onClick={addOnboardingDraft}>Add role and profile draft</button>{document.workflow?.runnerProfile === "agent-workflow" && <><button className="quiet-action" disabled={!projectPath || !onboardingCandidate} onClick={addAgentWorkflowOnboardingDrafts}>Create four Agent Workflow role drafts</button><p className="capability-status">Agent Workflow also requires an enabled machine-local toolkitRoot. Its path and commands stay outside this project configuration.</p></>}</section>}
+            <label>Role<select aria-label="Agent role" value={selectedRoleId} onChange={(event) => editSelected("roleId", event.target.value)}><option value="">Select a role</option>{portableConfiguration.roles.map((role) => <option key={role.id} value={role.id}>{role.id} — {role.intent}</option>)}</select></label><label>Profile override<select aria-label="Agent profile" value={selectedProfileId ?? ""} disabled={!selectedRole} onChange={(event) => selectNodeProfile(event.target.value)}><option value="">Use role profile ({selectedRole?.profileId ?? "none"})</option>{portableConfiguration.profiles.map((profile) => { const capability = capabilities?.providers.find((provider) => provider.providerId === profile.provider); return <option key={profile.id} value={profile.id} disabled={capability?.availability === "unavailable"}>{profile.id} · {profile.provider} / {profile.model}{capability?.availability === "unavailable" ? " — unavailable" : ""}</option>; })}</select></label><label>Apply preset<select aria-label="Configuration preset" defaultValue="" onChange={(event) => applyPresetToSelectedNode(event.target.value)}><option value="">Choose a preset</option>{(portableConfiguration.presets ?? []).map((preset) => <option key={preset.id} value={preset.id}>{preset.id}</option>)}</select></label><label>Apply prompt preset<select aria-label="Prompt preset" defaultValue="" onChange={(event) => applyPromptPresetToSelectedNode(event.target.value)}><option value="">Choose a prompt preset</option>{(portableConfiguration.promptPresets ?? []).map((preset) => <option key={preset.id} value={preset.id}>{preset.id}</option>)}</select></label><p className="capability-status">{selectedCapability ? `${selectedCapability.displayName}: ${selectedCapability.diagnostic ?? selectedCapability.availability}` : "Select a profile to check local availability."}</p>{showConfigurationReview && <p className="capability-status">Review: {configurationReview.hasChanges ? `roles ${configurationReview.changedRoles.join(", ") || "—"}; profiles ${configurationReview.changedProfiles.join(", ") || "—"}; presets ${configurationReview.changedPresets.join(", ") || "—"}; prompt presets ${configurationReview.changedPromptPresets.join(", ") || "—"}` : "No portable configuration changes."}</p>}<button className="quiet-action" disabled={!projectPath || !configurationReview.hasChanges} onClick={() => showConfigurationReview ? void savePortableConfiguration() : setShowConfigurationReview(true)}>{showConfigurationReview ? "Confirm save" : "Review configuration"}</button></section>}
           <label>Name<input aria-label="Node name" value={typeof selectedNode.name === "string" ? selectedNode.name : ""} onChange={(event) => editSelected("name", event.target.value)} /></label>
-          <label>Prompt<textarea aria-label="Node prompt" value={typeof selectedNode.prompt === "string" ? selectedNode.prompt : ""} onChange={(event) => editSelected("prompt", event.target.value)} /></label>
+          {selectedNode.type === "agent" ? <><label>Additional instructions<textarea aria-label="Additional instructions" value={typeof selectedNode.additionalInstructions === "string" ? selectedNode.additionalInstructions : ""} onChange={(event) => editSelected("additionalInstructions", event.target.value)} /><small className="capability-status">Appended after the selected role's base instruction.</small></label>{typeof selectedNode.prompt === "string" && <section className="legacy-prompt"><strong>Legacy replacement prompt</strong><p>This node still replaces its role instruction until you explicitly migrate it.</p><button className="quiet-action" onClick={migrateSelectedLegacyPrompt}>Migrate to additional instructions</button></section>}</> : <label>Prompt<textarea aria-label="Node prompt" value={typeof selectedNode.prompt === "string" ? selectedNode.prompt : ""} onChange={(event) => editSelected("prompt", event.target.value)} /></label>}
           <label>Dependencies<input aria-label="Dependencies" value={toList(selectedNode.dependsOn)} onChange={(event) => editSelected("dependsOn", event.target.value, true)} /></label>
           <label>Inputs<input aria-label="Inputs" value={toList(selectedNode.inputs)} onChange={(event) => editSelected("inputs", event.target.value, true)} /></label>
           <label>Outputs<input aria-label="Outputs" value={toList(selectedNode.outputs)} onChange={(event) => editSelected("outputs", event.target.value, true)} /></label>
@@ -297,7 +464,7 @@ function Studio() {
         <div className={document.diagnostics.length ? "diagnostics error" : "diagnostics valid"} aria-live="polite">
           {document.diagnostics.length ? document.diagnostics.map((item, index) => <p key={index}>Line {item.line}, column {item.column}: {item.message}</p>) : <p>Workflow is valid and ready to save.</p>}
         </div>
-        {document.workflow && <section className="conductor-configuration"><span className="eyebrow">WORKFLOW CONDUCTOR</span><label className="conductor-toggle"><input type="checkbox" checked={document.workflow.conductor?.enabled ?? false} onChange={(event) => commit({ ...document.workflow!, conductor: { ...document.workflow!.conductor, enabled: event.target.checked } })} /> Enable read-only Conductor</label>{document.workflow.conductor?.enabled && <label>Conductor profile<select aria-label="Conductor profile" value={document.workflow.conductor.profileId ?? ""} onChange={(event) => commit({ ...document.workflow!, conductor: { enabled: true, profileId: event.target.value || undefined } })}><option value="">Select a profile</option>{portableConfiguration.profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.id} · {profile.provider} / {profile.model}</option>)}</select></label>}<p>Prepares context, refines prompts, summarizes handoffs, and advises escalation. It cannot edit code or control tasks, terminals, dispatches, or decision gates.</p></section>}
+        {document.workflow && <section className="conductor-configuration"><span className="eyebrow">WORKFLOW CONDUCTOR</span><label className="conductor-toggle"><input type="checkbox" checked={document.workflow.conductor?.enabled ?? false} onChange={(event) => commit({ ...document.workflow!, conductor: { ...document.workflow!.conductor, enabled: event.target.checked } })} /> Enable read-only Conductor</label>{document.workflow.conductor?.enabled && <label>Conductor profile<select aria-label="Conductor profile" value={document.workflow.conductor.profileId ?? ""} onChange={(event) => commit({ ...document.workflow!, conductor: { enabled: true, profileId: event.target.value || undefined } })}><option value="">Select a profile</option>{portableConfiguration.profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.id} · {profile.provider} / {profile.model}</option>)}</select></label>}<p>Prepares context, refines prompts, summarizes handoffs, and advises escalation. It cannot edit code or control tasks, terminals, dispatches, or decision gates.</p></section>}</>}
       </aside>
     </section>
   </main>;

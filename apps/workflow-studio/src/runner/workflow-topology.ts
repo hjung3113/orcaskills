@@ -78,7 +78,11 @@ export function commandFor(node: WorkflowNode, executablePath?: string): string 
 }
 
 export function promptFor(node: WorkflowNode, roleIntent: string): string {
-  return typeof node.prompt === "string" ? node.prompt : roleIntent;
+  // A persisted legacy prompt remains a full replacement until the author
+  // explicitly stages its migration in the Inspector.
+  if (typeof node.prompt === "string") return node.prompt;
+  const additionalInstructions = typeof node.additionalInstructions === "string" ? node.additionalInstructions : "";
+  return additionalInstructions.trim() ? `${roleIntent}\n\n${additionalInstructions}` : roleIntent;
 }
 
 export { worktreeMode };
