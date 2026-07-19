@@ -1,20 +1,33 @@
 # Issue tracker: Local Markdown
 
-Issues and specifications for this repository live as Markdown files in `.scratch/`.
+Issues and specs (you may know a spec as a PRD) for this repo live as markdown files in `.scratch/`.
 
 ## Conventions
 
 - One feature per directory: `.scratch/<feature-slug>/`
-- The feature specification is `.scratch/<feature-slug>/spec.md`
-- Implementation issues are one file per ticket: `.scratch/<feature-slug>/issues/<NN>-<slug>.md`
-- Ticket numbers start at `01`; do not use one combined ticket file.
-- Record ticket state near the top of each issue file as `Status: <state>`.
-- Append discussion history under a `## Comments` heading.
+- The spec is `.scratch/<feature-slug>/spec.md`
+- Implementation issues are one file per ticket at `.scratch/<feature-slug>/issues/<NN>-<slug>.md`, numbered from `01` — never a single combined tickets file
+- Ticket state is recorded as a `Status:` line near the top of each issue file
+- Comments and conversation history append to the bottom of the file under a `## Comments` heading
+- A numeric ticket prefix identifies one canonical ticket only. Put exploratory plans in `plan.md`, a `notes/` directory, or the canonical ticket — never beside it as a second `issues/<NN>-*.md` file.
+- For ordinary implementation tickets, use one of these exact status values: `Planned`, `Ready`, `In progress`, `Blocked`, or `Done`. Reconcile a stale status before beginning a dependent ticket. Wayfinding tickets use their `claimed`/`resolved` lifecycle below.
+- Add `design.md` for a cross-cutting, multi-ticket, or interaction-shaping change; link to its relevant section from the tickets rather than duplicating the design.
 
-## Publishing
+## When a skill says "publish to the issue tracker"
 
-When a skill publishes an issue or specification, create the appropriate file under `.scratch/<feature-slug>/`.
+Create a new file under `.scratch/<feature-slug>/` (creating the directory if needed).
 
-## Reading
+## When a skill says "fetch the relevant ticket"
 
-When a skill refers to an issue, read the supplied local path or issue number from the relevant feature directory.
+Read the file at the referenced path. The user will normally pass the path or the issue number directly.
+
+## Wayfinding operations
+
+Used by `/wayfinder`. The **map** is a file with one **child** file per ticket.
+
+- **Map**: `.scratch/<effort>/map.md` — the Notes / Decisions-so-far / Fog body.
+- **Child ticket**: `.scratch/<effort>/issues/NN-<slug>.md`, numbered from `01`, with the question in the body. A `Type:` line records the ticket type (`research`/`prototype`/`grilling`/`task`); a `Status:` line records `claimed`/`resolved`.
+- **Blocking**: a `Blocked by: NN, NN` line near the top. A ticket is unblocked when every file it lists is `resolved`.
+- **Frontier**: scan `.scratch/<effort>/issues/` for files that are open, unblocked, and unclaimed; first by number wins.
+- **Claim**: set `Status: claimed` and save before any work.
+- **Resolve**: append the answer under an `## Answer` heading, set `Status: resolved`, then append a context pointer (gist + link) to the map's Decisions-so-far in `map.md`.

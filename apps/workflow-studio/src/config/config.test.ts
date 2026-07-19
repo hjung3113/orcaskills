@@ -66,6 +66,13 @@ describe("role and local profile configuration", () => {
     expect(modelPolicyFor(portable.profiles[0]!)).toEqual({ kind: "exact", modelId: "gpt-5" });
   });
 
+  it("reports duplicate prompt-preset ids precisely", () => {
+    expect(validateConfiguration({ ...portable, promptPresets: [{ id: "handoff", instructions: "One" }, { id: "handoff", instructions: "Two" }] }, {}, local)).toContainEqual({
+      code: "duplicate-prompt-preset",
+      message: 'Prompt preset "handoff" is duplicated.',
+    });
+  });
+
   it("reports unavailable local providers and disabled local profiles", () => {
     expect(validateConfiguration(portable, {}, { providers: {}, profiles: { balanced: { enabled: false } } }).map(({ code }) => code)).toEqual(
       expect.arrayContaining(["missing-local-provider", "disabled-local-profile"]),

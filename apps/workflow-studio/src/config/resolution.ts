@@ -11,6 +11,7 @@ export type ConfigurationDiagnosticCode =
   | "duplicate-role"
   | "duplicate-profile"
   | "duplicate-preset"
+  | "duplicate-prompt-preset"
   | "missing-role-profile"
   | "missing-override-role"
   | "missing-override-profile"
@@ -53,6 +54,7 @@ function duplicateDiagnostics(configuration: PortableConfiguration): Configurati
     ["Role", configuration.roles, "duplicate-role"],
     ["Profile", configuration.profiles, "duplicate-profile"],
     ["Preset", configuration.presets ?? [], "duplicate-preset"],
+    ["Prompt preset", configuration.promptPresets ?? [], "duplicate-prompt-preset"],
   ] as const) {
     const seen = new Set<string>();
     for (const value of values) {

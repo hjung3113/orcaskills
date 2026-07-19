@@ -16,6 +16,10 @@ export interface WorkflowNode {
   id: string;
   type: WorkflowNodeType;
   dependsOn?: string[];
+  /** New node-owned instruction text, composed with the role intent by a later runner change. */
+  additionalInstructions?: string;
+  /** Legacy replacement instruction. Its current execution semantics remain unchanged until migration. */
+  prompt?: string;
   [key: string]: unknown;
 }
 

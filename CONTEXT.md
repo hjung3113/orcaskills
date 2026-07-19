@@ -107,3 +107,21 @@ _Avoid_: orchestrating agent, execution controller
 **Model policy**:
 The explicit model-selection rule in a profile: either a discovered model identifier or a declared provider-default policy. Display labels and capabilities aid selection but do not control execution.
 _Avoid_: implicit provider default, display-name model selection
+
+### Configuration authoring
+
+**Configuration Library**:
+A staged Studio surface for creating, editing, duplicating, and removing portable roles, profiles, and prompt presets. It changes project configuration only through Configuration Review and Confirm Save.
+_Avoid_: direct YAML editor, auto-saving configuration panel
+
+**Prompt preset**:
+A portable, named template of additional agent instructions. Applying it copies its instruction text into a node; the node never keeps a live link to the preset.
+_Avoid_: live prompt binding, shared mutable prompt
+
+**Additional instructions**:
+The node-owned authored instruction appended to its role base instruction. It replaces neither the role base instruction nor structured upstream handoff.
+_Avoid_: node prompt override, role replacement prompt
+
+**Prompt composition**:
+The ordered prompt input for an agent: role base instruction, then node additional instructions, plus separately delivered structured upstream handoff. A prompt preset only helps populate the node-owned additional instructions before this composition.
+_Avoid_: raw-output interpolation, implicit prompt replacement

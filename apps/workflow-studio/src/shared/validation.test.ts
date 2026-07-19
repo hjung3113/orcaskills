@@ -62,4 +62,30 @@ describe("workflow validation", () => {
       nodeProfileOverrides: { build: { profileId: "careful", modelPolicy: { kind: "exact", modelId: "gpt-5" } } },
     });
   });
+
+  it("round-trips additional instructions without reinterpreting a legacy prompt", () => {
+    const source = `id: feature-delivery
+nodes:
+  - id: start
+    type: start
+  - id: build
+    type: agent
+    roleId: implementer
+    additionalInstructions: Check tests
+    prompt: Legacy replacement
+    dependsOn: [start]
+  - id: end
+    type: end
+    dependsOn: [build]
+`;
+    const first = parseWorkflow(source);
+    expect(first.workflow?.nodes.find((node) => node.id === "build")).toMatchObject({
+      additionalInstructions: "Check tests",
+      prompt: "Legacy replacement",
+    });
+    expect(parseWorkflow(serializeWorkflow(first.workflow!)).workflow?.nodes.find((node) => node.id === "build")).toMatchObject({
+      additionalInstructions: "Check tests",
+      prompt: "Legacy replacement",
+    });
+  });
 });

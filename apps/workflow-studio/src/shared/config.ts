@@ -28,6 +28,8 @@ export interface PortableConfiguration {
   roles: Role[];
   profiles: AgentProfile[];
   presets?: PortablePreset[];
+  /** Reusable text only. Applying one copies its instructions into a node. */
+  promptPresets?: PromptPreset[];
 }
 
 /** A shareable template; application copies these values into a workflow node. */
@@ -36,6 +38,12 @@ export interface PortablePreset {
   roleId: string;
   profileId: string;
   modelPolicy?: ModelPolicy;
+}
+
+/** A portable, provider-independent instruction snippet with no live bindings. */
+export interface PromptPreset {
+  id: string;
+  instructions: string;
 }
 
 export interface NodeProfileOverride {

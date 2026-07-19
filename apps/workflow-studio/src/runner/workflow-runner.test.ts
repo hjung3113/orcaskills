@@ -73,6 +73,27 @@ describe("WorkflowRunner", () => {
     expect(JSON.parse(await readFile(result.manifestPath, "utf8"))).toMatchObject({ workflowId: "delivery", nodes: result.manifest.nodes });
   });
 
+  it("uses the composed prompt for task and dispatch while keeping handoff structured", async () => {
+    const projectPath = await mkdtemp(join(tmpdir(), "workflow-runner-"));
+    directories.push(projectPath);
+    const adapter = new RecordingOrcaCliAdapter();
+    await new WorkflowRunner(adapter).run({
+      ...request,
+      projectPath,
+      workflow: {
+        ...request.workflow,
+        nodes: request.workflow.nodes.map((node) => node.id === "implement"
+          ? { ...node, additionalInstructions: "Run focused tests." }
+          : node),
+      },
+    });
+    const task = adapter.operations.find((operation) => operation.kind === "create-task" && operation.input.nodeId === "implement");
+    const dispatch = adapter.operations.find((operation) => operation.kind === "dispatch" && operation.input.taskId === "task-implement");
+    expect(task).toMatchObject({ input: { prompt: "Implement the requested change\n\nRun focused tests." } });
+    expect(dispatch).toMatchObject({ input: { prompt: "Implement the requested change\n\nRun focused tests.", input: { structuredContext: [{ fromNodeId: "research", fields: ["findings"], artifactReferences: ["notes.md"] }] } } });
+    expect(JSON.stringify([task, dispatch])).not.toContain("must-not-forward");
+  });
+
   it("rejects invalid workflow, unavailable profiles, CLI, and runtime before any operations", async () => {
     const adapter = new RecordingOrcaCliAdapter(false, false);
     const runner = new WorkflowRunner(adapter);
