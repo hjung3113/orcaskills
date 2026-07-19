@@ -1,81 +1,81 @@
 # Orca Workflow Studio
 
-> Design reusable multi-agent development workflows visually, then run them in Orca.
+> 재사용 가능한 멀티 에이전트 개발 워크플로우를 시각적으로 설계하고 Orca에서 실행합니다.
 
-Orca Workflow Studio is an Electron desktop editor for project-local, Git-tracked workflow DAGs. It offers an n8n-style canvas for composing agent work, approvals, conditions, parallel branches, and terminal states—without replacing Orca as the place where agents actually run.
+Orca Workflow Studio는 프로젝트 로컬 Git 저장소의 워크플로우 DAG를 편집하는 Electron 데스크톱 에디터입니다. 에이전트 작업, 승인, 조건, 병렬 분기, 종료 상태를 n8n 스타일 캔버스에서 구성하며 실제 에이전트 실행의 권한은 Orca에 남겨 둡니다.
 
-## What it does
+## 제공 기능
 
-- Edits `.orca/workflows/*.yaml` inside an existing Git project.
-- Provides a canvas-first DAG editor with a collapsible step outline and persistent inspector.
-- Supports **Start**, **Agent**, **Approval**, **Condition**, **Parallel**, and **End** nodes.
-- Validates YAML, graph structure, role/profile resolution, structured handoffs, and unsafe concurrent Worktree writes before execution.
-- Resolves a portable workflow role through an agent profile and provider/model policy, while keeping executables and credentials machine-local.
-- Discovers reviewed local CLI capabilities through bounded, non-interactive probes; discovery never logs in, uses credentials, or calls remote catalogs.
-- Guides Agent-node configuration through Role → Profile → Model policy, with explicit preset application and review-before-save.
-- Previews and runs validated workflows through an Orca adapter, preserving a local run manifest.
-- Uses Orca Decision Gates for approvals and pauses failures/escalations for explicit retry, profile replacement, or termination choices.
-- Includes a first-class **Agent Workflow** template for ARCHITECT → contained CODEX → independent REVIEWER → independent VERIFIER → Release Captain decision, backed by a reviewed local runner profile and current-head evidence gate.
+- 기존 Git 프로젝트의 .orca/workflows/*.yaml을 편집합니다.
+- 캔버스 우선 DAG 에디터, 접을 수 있는 단계 목록, 고정 Inspector를 제공합니다.
+- 시작, 에이전트, 승인, 조건, 병렬, 종료 노드를 지원합니다.
+- YAML, 그래프 구조, 역할/프로필 해석, 구조화된 핸드오프, 안전하지 않은 동시 Worktree 쓰기를 실행 전에 검증합니다.
+- 이식 가능한 워크플로우 역할을 에이전트 프로필 및 제공자/모델 정책으로 해석하며, 실행 파일과 자격 증명은 로컬 머신에만 둡니다.
+- 검토된 로컬 CLI 역량만 제한적·비대화형 probe로 탐색합니다. 탐색은 로그인, 자격 증명 사용, 원격 카탈로그 호출을 하지 않습니다.
+- Agent 노드는 역할 → 프로필 → 모델 정책 순서로 설정하며, 프리셋 적용과 저장 전 검토를 명시적으로 진행합니다.
+- 검증된 워크플로우를 Orca 어댑터로 미리보기·실행하고 로컬 실행 manifest를 남깁니다.
+- 승인에는 Orca Decision Gate를 쓰고, 실패·에스컬레이션은 재시도·프로필 교체·종료를 명시적으로 선택할 때까지 멈춥니다.
+- Agent Workflow 템플릿으로 ARCHITECT → 격리 CODEX → 독립 REVIEWER → 독립 VERIFIER → Release Captain 결정을 제공합니다.
 
-Workflow Studio is an editor, validator, and preview surface. **Orca remains the source of truth for live task state, dispatches, approval records, and recovery decisions.**
+Workflow Studio는 에디터·검증기·미리보기 화면입니다. **실시간 작업 상태, dispatch, 승인 기록, 복구 결정의 원본은 항상 Orca입니다.**
 
-## Architecture
+## 아키텍처
 
-```text
-Workflow DAG -> role / intent -> agent profile -> provider / runtime / model
-       |                                      |
-       +-- Studio edits and validates          +-- local-only machine settings
+~~~text
+워크플로우 DAG -> 역할 / 의도 -> 에이전트 프로필 -> 제공자 / 런타임 / 모델
+       |                                          |
+       +-- Studio가 편집·검증                         +-- 로컬 전용 머신 설정
 
-Validated workflow -> WorkflowRunner -> Orca tasks, dispatches, gates, Worktrees
-```
+검증된 워크플로우 -> WorkflowRunner -> Orca 작업, dispatch, gate, Worktree
+~~~
 
-The runner forwards structured outputs and artifact references between nodes. Full raw agent output is deliberately opt-in, so handoffs stay reviewable and bounded.
+Runner는 노드 사이에 구조화된 출력과 아티팩트 참조를 전달합니다. 원본 에이전트 전체 출력은 의도적으로 opt-in이므로 핸드오프가 검토 가능하고 제한된 크기로 유지됩니다.
 
-## Quick start
+## 빠른 시작
 
-Prerequisites: Node.js and npm. Running a workflow additionally requires a running Orca environment.
+필수 조건: Node.js와 npm. 워크플로우 실행에는 실행 중인 Orca 환경도 필요합니다.
 
-```bash
+~~~bash
 git clone https://github.com/hjung3113/orcaskills.git
 cd orcaskills
 npm install
 npm run build
 npm --workspace @orca/workflow-studio start
-```
+~~~
 
-For renderer development:
+렌더러 개발은 다음처럼 실행합니다.
 
-```bash
+~~~bash
 npm run dev
-```
+~~~
 
-### WSL-friendly web development
+### WSL 친화적 웹 개발
 
-Avoid WSLg/Electron while iterating on the UI: run the local API and Vite in two WSL terminals, then open `http://localhost:5173` from a Windows browser.
+UI 반복 작업에서는 WSLg/Electron 대신 로컬 API와 Vite를 각각 WSL 터미널에서 실행하고, Windows 브라우저로 http://localhost:5173을 엽니다.
 
-```bash
-# terminal 1
+~~~bash
+# 터미널 1
 npm --workspace @orca/workflow-studio run web:server
 
-# terminal 2
+# 터미널 2
 npm --workspace @orca/workflow-studio run dev
-```
+~~~
 
-Enter a WSL absolute Git-project path and choose **Open path**. The browser uses the same client contract as Electron but talks only to a loopback local API; it never receives filesystem or Orca CLI authority directly. See [web-first development](docs/web-first-development.md) for permitted-root configuration and Windows-native Electron verification.
+WSL 절대 Git 프로젝트 경로를 입력한 뒤 **Open path**를 선택합니다. 브라우저는 Electron과 같은 클라이언트 계약을 사용하지만 loopback 로컬 API와만 통신하므로 파일시스템이나 Orca CLI 권한을 직접 받지 않습니다. 허용 루트 설정과 Windows 네이티브 Electron 검증은 [web-first 개발 안내](docs/web-first-development.md)를 참고하세요.
 
-Run checks:
+검증 명령:
 
-```bash
+~~~bash
 npm run test
 npm run typecheck
 npm run build
-```
+~~~
 
-## Workflow configuration
+## 워크플로우 구성
 
-Workflow definitions live beside the code they automate:
+워크플로우 정의는 자동화할 코드와 같은 프로젝트에 둡니다.
 
-```text
+~~~text
 your-project/
 ├── .orca/
 │   ├── workflows/
@@ -85,11 +85,11 @@ your-project/
 └── .agents/
     └── skills/
         └── orca-workflow/
-```
+~~~
 
-An initial workflow can be as small as:
+초기 워크플로우는 다음처럼 작게 시작할 수 있습니다.
 
-```yaml
+~~~yaml
 id: feature-delivery
 name: Feature delivery
 nodes:
@@ -98,81 +98,81 @@ nodes:
   - id: end
     type: end
     dependsOn: [start]
-```
+~~~
 
-Agent nodes then add an explicit role, prompt, access mode, Worktree policy, and structured inputs/outputs. The full product contract is in [the Workflow Studio specification](.scratch/orca-workflow-studio/spec.md).
+이후 Agent 노드에 명시적 역할, 프롬프트, 접근 모드, Worktree 정책, 구조화된 입력·출력을 추가합니다. 전체 제품 계약은 [Workflow Studio 명세](.scratch/orca-workflow-studio/spec.md)에 있습니다.
 
-### Guided configuration
+### 안내형 구성
 
-Open a Git project, select an **Agent** node, then use the Inspector to select its Role and Profile. The Studio refreshes only reviewed local capability adapters at project open or when you choose **Refresh capabilities**. A capability that cannot be used remains explainable; Studio never invents models or changes project configuration in the background.
+Git 프로젝트를 열고 Agent 노드를 선택한 다음 Inspector에서 역할과 프로필을 고릅니다. Studio는 프로젝트를 열 때와 **Refresh capabilities**를 선택했을 때만 검토된 로컬 capability adapter를 새로 고칩니다. 사용할 수 없는 역량은 이유와 함께 표시되며, Studio가 모델을 지어내거나 백그라운드에서 프로젝트 구성을 바꾸지 않습니다.
 
-Profiles and presets remain portable in `.orca/workflow-config.yaml`; executable paths, credentials, and discovery data remain local. Selecting **Review configuration** lists the portable values that would change. **Confirm save** is the only action that writes the configuration. Applying a preset copies its role/profile selection into the current draft—later preset edits do not silently rewrite existing nodes.
+프로필과 프리셋은 .orca/workflow-config.yaml에서 이식 가능하게 유지됩니다. 실행 파일 경로, 자격 증명, 탐색 데이터는 로컬에만 남습니다. **Review configuration**은 바뀔 이식 가능한 값을 나열하고, 구성을 실제로 쓰는 동작은 **Confirm save**뿐입니다. 프리셋 적용은 현재 draft에 역할/프로필 선택을 복사하며 이후 프리셋을 바꿔도 기존 노드는 조용히 변경되지 않습니다.
 
-Conductor is an optional, read-only workflow advisor: it can prepare context, refine prompts, summarize handoffs, and advise escalation. It cannot edit code or manage Orca tasks, terminals, dispatches, or decision gates. See [the drill-down PRD](.scratch/workflow-studio-drilldown-configuration/prd.md) and [discovery ADR](docs/adr/0001-bounded-local-capability-discovery.md) for the full boundary.
+Conductor는 선택적 읽기 전용 워크플로우 조언자입니다. 컨텍스트 준비, 프롬프트 개선, 핸드오프 요약, 에스컬레이션 조언은 할 수 있지만 코드 편집이나 Orca 작업·터미널·dispatch·Decision Gate 관리는 할 수 없습니다. 전체 경계는 [drill-down PRD](.scratch/workflow-studio-drilldown-configuration/prd.md)와 [탐색 ADR](docs/adr/0001-bounded-local-capability-discovery.md)를 참고하세요.
 
-### Agent Workflow mode
+### Agent Workflow 모드
 
-Choose **✦ Agent Workflow** from the workflow list to create the fixed visual multi-agent flow. The template requires distinct ARCHITECT, CODEX, REVIEWER, and VERIFIER roles; CODEX uses an isolated worktree and an allowlisted local toolkit dispatch. The runner accepts release readiness only from a current-head `VERIFIER` PASS artifact, then opens an Orca Decision Gate for the human Release Captain. It never auto-resolves the gate, merges, pushes, or releases.
+워크플로우 목록에서 **✦ Agent Workflow**를 선택하면 고정된 시각적 멀티 에이전트 흐름이 만들어집니다. 이 템플릿은 서로 다른 ARCHITECT, CODEX, REVIEWER, VERIFIER 역할을 요구합니다. CODEX는 격리 Worktree와 허용 목록 기반 로컬 toolkit dispatch를 사용합니다. Runner는 현재 HEAD의 VERIFIER PASS 아티팩트만 release 준비 신호로 받아들이고, 이후 사람이 Release Captain으로 Orca Decision Gate를 결정합니다. Gate를 자동으로 해제하거나 merge, push, release하지 않습니다.
 
-The template is portable; the toolkit root stays in the machine-local configuration. See the complete [Agent Workflow UI and setup example](docs/agent-workflow-example.md), [PRD](.scratch/agent-workflow-mode/prd.md), and [ADR](docs/adr/0002-agent-workflow-template-and-runner-profile.md).
+템플릿은 이식 가능하며 toolkit root는 로컬 머신 설정에 둡니다. 자세한 설정과 화면 사용법은 [Agent Workflow 예시](docs/agent-workflow-example.md), [PRD](.scratch/agent-workflow-mode/prd.md), [ADR](docs/adr/0002-agent-workflow-template-and-runner-profile.md)를 참고하세요.
 
-### Run Readiness and execution preview
+### Run Readiness와 실행 미리보기
 
-Choose **Check readiness** before a run to evaluate the exact draft against its workflow diagnostics, role/profile and Conductor configuration, required local toolkit, Orca CLI, and Orca runtime. The Inspector reports **Not checked**, **Blocked**, or **Ready to preview**. Every blocker names its scope, reason, and next action. A node-specific blocker includes **Go to _node-id_**, which focuses that node and its Inspector; affected canvas nodes also carry a text-backed **Blocked** badge. Changing the draft, project, or saved portable configuration invalidates an earlier result and clears the badges.
+실행 전에 **Check readiness**를 선택하면 현재 draft를 워크플로우 진단, 역할/프로필과 Conductor 구성, 필요한 로컬 toolkit, Orca CLI, Orca runtime에 대해 평가합니다. Inspector에는 **Not checked**, **Blocked**, **Ready to preview** 중 하나가 표시됩니다. 모든 blocker는 범위·이유·다음 행동을 알려 줍니다. 노드별 blocker에는 해당 노드와 Inspector로 이동하는 **Go to node-id**가 있고, 영향받은 캔버스 노드에는 텍스트 기반 **Blocked** 배지가 나타납니다. draft·프로젝트·저장된 이식 구성 변경은 이전 결과와 배지를 무효화합니다.
 
-Only a Ready result enables **Preview execution**. Preview lists the planned Orca operations but creates no task, terminal, worktree, manifest, or Decision Gate. The renderer never receives machine-local paths or credentials; Electron or the loopback local API builds the runner request from server-owned configuration. See [Run Readiness](docs/run-readiness.md) for the complete behavior and boundary.
+Ready 상태에서만 **Preview execution**이 활성화됩니다. 미리보기는 예정된 Orca 작업을 보여 주지만 task, terminal, worktree, manifest, Decision Gate를 만들지 않습니다. 렌더러는 로컬 경로나 자격 증명을 받지 않으며 Electron 또는 loopback API가 서버 소유 구성으로 runner request를 만듭니다. 전체 동작과 경계는 [Run Readiness](docs/run-readiness.md)를 참고하세요.
 
-## Running workflows from Orca
+## Orca에서 워크플로우 실행
 
-The project-local [`orca-workflow`](.agents/skills/orca-workflow/SKILL.md) skill exposes the same command boundary to Codex and Claude terminals:
+프로젝트 로컬 [orca-workflow](.agents/skills/orca-workflow/SKILL.md) skill은 Codex와 Claude 터미널에 동일한 명령 경계를 제공합니다.
 
-```text
+~~~text
 /workflow list <project-path>
 /workflow validate <project-path> <workflow-id>
 /workflow run <project-path> <workflow-id>
 /workflow status <project-path> [run-id]
-```
+~~~
 
-The invoking terminal is only the launcher; each Agent node uses the profile selected by the workflow. Status reports Orca-backed gates and paused paths but never resolves them automatically.
+명령을 호출한 터미널은 launcher일 뿐이며, 각 Agent 노드는 워크플로우가 선택한 프로필을 사용합니다. 상태는 Orca 기반 gate와 멈춘 경로를 보고하지만 자동으로 해결하지는 않습니다.
 
-## Safety model
+## 안전 모델
 
-- Same-Worktree Agent nodes that could write concurrently are rejected.
-- Independent concurrent writes require explicit isolated Worktrees.
-- Approval nodes become Orca Decision Gates.
-- Failures and escalations pause the affected path. There is no automatic retry or agent switching in the MVP.
-- Credentials, executable paths, and other machine-specific settings are excluded from shared project configuration.
+- 동시에 쓸 가능성이 있는 Same-Worktree Agent 노드는 거부됩니다.
+- 독립적인 동시 쓰기는 명시적인 격리 Worktree가 필요합니다.
+- Approval 노드는 Orca Decision Gate가 됩니다.
+- 실패와 에스컬레이션은 영향받은 경로를 멈춥니다. MVP에는 자동 재시도나 자동 에이전트 전환이 없습니다.
+- 자격 증명, 실행 파일 경로, 기타 머신 전용 설정은 공유 프로젝트 구성에서 제외됩니다.
 
-## Project layout
+## 프로젝트 구성
 
-```text
-apps/workflow-studio/     Electron app, renderer, validation, and runner
-.agents/skills/           Project-local Codex/Claude skills
+~~~text
+apps/workflow-studio/      Electron 앱, renderer, validation, runner
+.agents/skills/            프로젝트 로컬 Codex/Claude skill
 .scratch/orca-workflow-studio/
-  spec.md                 Approved product specification
-  issues/                 Dependency-aware local implementation tickets
-docs/plans/               Product and delivery plan
-prototype/workflow-studio/ Throwaway UI exploration; not production code
-examples/agent-workflow/   Portable Agent Workflow example
-```
+  spec.md                  승인된 제품 명세
+  issues/                  의존성 인식 로컬 구현 티켓
+docs/plans/                제품·전달 계획
+prototype/workflow-studio/ 폐기 가능한 UI 탐색용 코드, 제품 코드 아님
+examples/agent-workflow/   이식 가능한 Agent Workflow 예시
+~~~
 
-## Verification status
+## 검증 상태
 
-The test suite covers workflow parsing and round trips, configuration resolution, the runner adapter boundary, approvals/failure pauses, parallel Worktree safety, command operations, and representative mock end-to-end workflows.
+테스트 모음은 워크플로우 파싱과 round trip, 구성 해석, runner adapter 경계, 승인/실패 중단, 병렬 Worktree 안전성, 명령 동작, 대표적인 mock end-to-end 워크플로우를 다룹니다.
 
-```text
+~~~text
 58 tests passing
 TypeScript typecheck passing
 Production build passing
 Electron startup uses the production CommonJS Electron entrypoint
-```
+~~~
 
-The Electron visual-authoring smoke is recorded in [the smoke-test results](apps/workflow-studio/tests/e2e/SMOKE-RESULTS.md). The drill-down implementation adds unit coverage for safe discovery, staged review, preset copying, and node-level profile resolution.
+Electron 시각적 작성 smoke 결과는 [smoke-test 결과](apps/workflow-studio/tests/e2e/SMOKE-RESULTS.md)에 기록되어 있습니다. drill-down 구현에는 안전한 탐색, 단계적 검토, 프리셋 복사, 노드 수준 프로필 해석에 대한 단위 테스트가 추가되어 있습니다.
 
-## Roadmap
+## 로드맵
 
-See the [open issues](https://github.com/hjung3113/orcaskills/issues), the local [base implementation tickets](.scratch/orca-workflow-studio/issues/), and the [Agent Workflow tickets](.scratch/agent-workflow-mode/issues/). Live runtime monitoring in Studio, loops, schedules, webhooks, automatic retries, and autonomous recovery are intentionally out of scope for the first release.
+[공개 이슈](https://github.com/hjung3113/orcaskills/issues), 로컬 [기본 구현 티켓](.scratch/orca-workflow-studio/issues/), [Agent Workflow 티켓](.scratch/agent-workflow-mode/issues/)을 참고하세요. Studio의 실시간 runtime 모니터링, 루프, 스케줄, webhook, 자동 재시도, 자율 복구는 첫 릴리스 범위 밖입니다.
 
-## References
+## 참고 자료
 
-The README structure takes inspiration from well-maintained workflow and desktop projects, especially [n8n](https://github.com/n8n-io/n8n), [Electron](https://github.com/electron/electron), and [React Flow](https://github.com/xyflow/xyflow). Orca Workflow Studio is not affiliated with them.
+README 구성은 잘 관리되는 워크플로우·데스크톱 프로젝트인 [n8n](https://github.com/n8n-io/n8n), [Electron](https://github.com/electron/electron), [React Flow](https://github.com/xyflow/xyflow)에서 영감을 받았습니다. Orca Workflow Studio는 이들과 제휴 관계가 없습니다.
